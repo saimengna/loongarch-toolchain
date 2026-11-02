@@ -1,0 +1,184 @@
+# loongarch-toolchain
+
+面向 LoongArch 的交叉工具链超级工程，结构参考
+[riscv-gnu-toolchain](https://github.com/riscv-collab/riscv-gnu-toolchain)。
+
+本仓库包含顶层 `configure`、`Makefile.in`、测试脚本、QEMU/DejaGNU
+封装，以及 LoongArch Linux UAPI 头文件。gcc、binutils、glibc、newlib、
+musl、qemu 和 llvm 从各自的上游仓库获取，不在本仓库重复存放源码。
+
+## 支持的工具链
+
+| target | 三元组 | C 库 |
+|--------|--------|------|
+| `newlib` | `loongarch64-unknown-elf` | newlib（裸机） |
+| `linux` | `loongarch64-unknown-linux-gnu` | glibc |
+| `musl` | `loongarch64-unknown-linux-musl` | musl |
+
+`uclibc` 目标仍保留在 Makefile 中，但当前 LoongArch GCC 不支持
+`loongarch64-unknown-linux-uclibc`，因此暂不作为发布目标。Picolibc
+尚未接入。
+
+## 快速开始
+
+首次克隆时初始化子模块：
+
+```bash
+git clone --recursive git@github.com:YOU/loongarch-toolchain.git
+cd loongarch-toolchain
+```
+
+配置并构建 glibc 工具链：
+
+```bash
+./configure --prefix="$HOME/loongarch64" --enable-linux
+make -j"$(nproc)" linux
+```
+
+构建裸机 newlib 工具链：
+
+```bash
+./configure --prefix="$HOME/loongarch64-elf"
+make -j"$(nproc)" newlib
+```
+
+构建 musl 工具链：
+
+```bash
+./configure --prefix="$HOME/loongarch64-musl" --enable-musl
+make -j"$(nproc)" musl
+```
+
+需要 LLVM/Clang 时在 configure 阶段加 `--enable-llvm`：
+
+```bash
+./configure --prefix="$HOME/loongarch64" --enable-linux --enable-llvm
+make -j"$(nproc)" linux
+```
+
+构建 QEMU user-mode 模拟器：
+
+```bash
+make -j"$(nproc)" build-qemu
+```
+
+## 获取或更新源码
+
+子模块没有初始化，或者某个组件目录为空时：
+
+```bash
+./configure --prefix="$HOME/loongarch64" --enable-linux
+make fetch
+```
+
+如果还没有生成 Makefile，也可以直接运行
+`bash scripts/fetch-sources.sh`。
+
+`make fetch` 会优先尝试子模块，失败后按
+`scripts/fetch-sources.sh` 顶部的镜像表逐个尝试备用源。已有源码默认
+不覆盖；强制重新拉取使用：
+
+```bash
+make fetch FETCH_ARGS=-f
+```
+
+本机连不上 GitHub HTTPS、但 SSH 可用时，可以跳过子模块直接走镜像/SSH：
+
+```bash
+FETCH_USE_SUBMODULE=0 make fetch
+```
+
+## 构建目标
+
+| 目标 | 作用 |
+|------|------|
+| `all` | 构建 configure 选中的默认目标 |
+| `newlib` | newlib 裸机工具链 |
+| `linux` | glibc GNU/Linux 工具链 |
+| `musl` | musl GNU/Linux 工具链 |
+| `build-binutils` | 单独构建 binutils |
+| `build-gcc1` / `build-gcc2` | 单独构建 GCC 第一阶段/第二阶段 |
+| `build-libc` | 单独构建当前目标的 C 库 |
+| `build-gdb` | 单独构建 GDB |
+| `build-qemu` / `build-sim` | 构建 QEMU user-mode 模拟器 |
+| `build-llvm` | 构建 LLVM/Clang 工具链 |
+| `check` | 运行当前目标的 GCC 测试 |
+| `check-glibc-linux` | 运行 glibc 自身测试 |
+| `check-gcc-linux` / `check-gcc-newlib` / `check-gcc-musl` | 分别运行三种 C 库的 GCC 测试 |
+| `check-newlib-nano` | 运行 newlib-nano 测试 |
+| `check-binutils-linux` / `check-binutils-newlib` | 运行 binutils/GAS/LD 测试 |
+| `check-gdb-linux` / `check-gdb-newlib` | 运行 GDB 测试 |
+| `report` | 汇总当前目标的测试结果 |
+| `report-linux` / `report-newlib` / `report-musl` | 汇总对应目标的测试结果 |
+| `report-binutils` / `report-gdb` | 单独汇总 binutils 或 GDB 结果 |
+| `package` | 把安装目录打成 `.tar.xz` |
+| `versions` | 记录各组件当前 commit 到 `versions.txt` |
+| `fetch` | 拉取或更新所有组件源码 |
+| `clean` | 删除 `build-*`、`install-*` 和 `stamps` |
+
+打包示例：
+
+```bash
+make package PACKAGE_MODE=linux PACKAGE_OUTDIR="$PWD/artifacts"
+```
+
+生成的压缩包会包含 `VERSIONS.txt`，记录 gcc、binutils、glibc 等组件的
+实际 commit。
+
+测试报告默认只打印统计信息。需要“有意外失败就退出非零”时：
+
+```bash
+make report-linux REPORT_STRICT=1
+```
+
+## 目录结构
+
+```text
+.
+├── configure / configure.ac      顶层 autoconf 配置
+├── Makefile.in                   顶层构建规则
+├── linux-headers/include/        vendored LoongArch UAPI 头文件
+├── scripts/                      源码拉取、DejaGNU board、QEMU/awk/sed wrapper
+├── .github/                      CI 与 runner 辅助脚本
+├── build-*/                      各组件 out-of-tree 构建目录
+├── stamps/                       已完成步骤的 stamp 文件
+├── install-*/                    分阶段安装目录
+└── gcc/ binutils/ gdb/ glibc/ newlib/ musl/ qemu/ llvm/   子模块
+```
+
+## CI 与发布
+
+GitHub Actions 使用与本地相同的 `configure` 和 `make` 流程，但没有
+nightly/定时任务：
+
+- `.github/workflows/build.yml`：手动触发、推送到 `master`、向 `master`
+  提 PR 时运行。
+- GCC 与 LLVM 分成两个 job。LLVM job 下载同一轮 GCC job 产出的工具链，
+  再只构建 LLVM，避免重复构建 GNU 工具链。
+- 默认矩阵覆盖 Ubuntu 22.04/24.04、newlib/linux/musl、GCC/LLVM，并支持
+  `unstripped`、`stripped`、`both` 三种打包方式。
+- `test-sim` 行构建 newlib + QEMU，并用 testsuite 做实际运行验证。
+- `.github/workflows/release.yml`：推送 `v*` tag 时构建 GCC/LLVM，并发布
+  stripped 和 unstripped 两种 `.tar.xz` 到 GitHub Release。
+
+CI 中的上游源码按子模块记录的 commit 构建，保证同一提交可复现。本机执行
+`make fetch` 时默认通过 `git submodule update --remote` 获取 `.gitmodules`
+中对应分支的最新提交。
+
+产物命名格式：
+
+```text
+loongarch64-{elf|glibc|musl}-{ubuntu-22.04|ubuntu-24.04}-{gcc|llvm}[-stripped][-build|-sim|-release].tar.xz
+```
+
+## 注意
+
+- 当前没有加入 Picolibc。
+- uClibc 构建暂不可用，原因是 GCC 没有对应的 LoongArch target triplet。
+- LoongArch 没有 RISC-V 的 Spike/PK，CI 模拟器统一使用 QEMU user-mode。
+- 目前没有搬入 RISC-V 的 Dhrystone 基准和 GDB allowlist；测试报告默认
+  打印汇总，可用 `REPORT_STRICT=1` 对意外失败做强校验。
+- `--enable-llvm` 会显著增加构建时间和磁盘占用；时间紧张时先只构建 GCC。
+- LLVM 需要 Python ≥3.8；系统 `python3` 太旧时用
+  `make LLVM_PYTHON=/path/to/python3 QEMU_PYTHON=/path/to/python3`。
+- 子模块提交和 CI 发布流程还需要在第一次真实推送后做一次端到端验证。

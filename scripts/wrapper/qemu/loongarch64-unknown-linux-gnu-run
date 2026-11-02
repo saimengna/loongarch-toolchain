@@ -1,0 +1,19 @@
+#!/bin/bash
+#
+# Wrapper for running LoongArch programs with QEMU user-mode emulation.
+# Used by the GCC/binutils/gdb testsuites via the loongarch-sim dejagnu board.
+#
+# Extra QEMU arguments can be passed as -Wq,ARG (comma separated).
+
+qemu_args=()
+while [[ "$1" != "" ]]
+do
+    case "$1" in
+    -Wq,*) qemu_args+=("$(echo "$1" | cut -d, -f2-)");;
+    *) break;;
+    esac
+    shift
+done
+
+QEMU_CPU="${QEMU_CPU:-la464}" qemu-loongarch64 "${qemu_args[@]}" \
+  -L ${LOONGARCH_SYSROOT} "$@"

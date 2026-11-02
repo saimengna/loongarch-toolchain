@@ -1,0 +1,11 @@
+#!/bin/bash
+
+# install OS prerequisites
+apt update
+apt install -y autoconf automake autotools-dev curl python3 python3-pip \
+            python3-tomli libmpc-dev libmpfr-dev libgmp-dev gawk \
+            build-essential bison flex texinfo gperf libtool patchutils bc \
+            zlib1g-dev libexpat-dev git meson ninja-build cmake ccache libglib2.0-dev \
+            expect device-tree-compiler python3-pyelftools libslirp-dev \
+            libzstd-dev libncurses-dev libpixman-1-dev python3-venv dejagnu \
+            xz-utils file pkg-config libxml2-dev python3-setuptools

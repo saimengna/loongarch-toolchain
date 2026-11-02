@@ -1,0 +1,9 @@
+# DejaGNU site configuration for LoongArch testing with QEMU.
+#
+# This file is passed to runtest via the DEJAGNU environment variable.
+# It tells DejaGNU where to find the board description file
+# (loongarch-sim.exp), which lives in the same directory as this file.
+#
+# Using [info script] keeps the path relocatable.
+
+set boards_dir [file dirname [info script]]

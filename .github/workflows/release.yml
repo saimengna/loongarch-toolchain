@@ -1,0 +1,42 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    uses: ./.github/workflows/build-reusable.yaml
+    with:
+      artifact-name: release
+      compiler: '["gcc"]'
+      strip: both
+
+  build-llvm:
+    needs: [build]
+    uses: ./.github/workflows/build-reusable.yaml
+    with:
+      artifact-name: release
+      compiler: '["llvm"]'
+      strip: both
+      use-prebuilt-gnu: true
+
+  publish:
+    needs: [build, build-llvm]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          merge-multiple: true
+
+      - name: Publish GitHub release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: artifacts/*.tar.xz
+          generate_release_notes: true

@@ -1,0 +1,10 @@
+# DejaGNU board definition for LoongArch cross testing with QEMU user-mode
+# emulation.  The testsuite invokes the -run wrapper scripts from
+# scripts/wrapper/qemu (which must be on PATH).
+
+load_generic_config "sim"
+set_board_info sim "loongarch64-unknown-linux-gnu-run"
+set_board_info compiler "[find_gcc]"
+set_board_info ldflags "-static"
+set_board_info gdb,nosignals 1
+set_board_info is_simulator 1

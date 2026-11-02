@@ -1,0 +1,40 @@
+[submodule "gcc"]
+	path = gcc
+	url = https://github.com/gcc-mirror/gcc.git
+	branch = master
+	shallow = true
+[submodule "binutils"]
+	path = binutils
+	url = https://sourceware.org/git/binutils-gdb.git
+	branch = master
+	shallow = true
+[submodule "gdb"]
+	path = gdb
+	url = https://sourceware.org/git/binutils-gdb.git
+	branch = master
+	shallow = true
+[submodule "newlib"]
+	path = newlib
+	url = https://github.com/loongson/newlib.git
+	branch = loongarch_v4.5.0
+	shallow = true
+[submodule "glibc"]
+	path = glibc
+	url = https://github.com/bminor/glibc.git
+	branch = master
+	shallow = true
+[submodule "musl"]
+	path = musl
+	url = https://github.com/kraj/musl.git
+	branch = master
+	shallow = true
+[submodule "qemu"]
+	path = qemu
+	url = https://gitlab.com/qemu-project/qemu.git
+	branch = master
+	shallow = true
+[submodule "llvm"]
+	path = llvm
+	url = https://github.com/llvm/llvm-project.git
+	branch = main
+	shallow = true

@@ -1,0 +1,74 @@
+#!/usr/bin/env python3
+"""Summarize DejaGNU .sum files and optionally fail on unexpected results."""
+
+import argparse
+import collections
+import os
+import sys
+
+COUNTED = ("PASS", "FAIL", "XPASS", "XFAIL", "UNRESOLVED", "UNSUPPORTED", "ERROR")
+
+
+def find_sum_files(paths):
+    for path in paths:
+        if os.path.isfile(path) and path.endswith(".sum"):
+            yield path
+            continue
+        for root, _, files in os.walk(path):
+            for name in sorted(files):
+                if name.endswith(".sum"):
+                    yield os.path.join(root, name)
+
+
+def read_counts(path, totals, failures):
+    counts = collections.Counter()
+    with open(path, encoding="utf-8", errors="replace") as stream:
+        for line in stream:
+            status = line.split(None, 1)[0].rstrip(":") if line.strip() else ""
+            if status in COUNTED:
+                counts[status] += 1
+                totals[status] += 1
+                if status in ("FAIL", "XPASS", "UNRESOLVED", "ERROR"):
+                    failures.append(f"{path}: {line.rstrip()}")
+    return counts
+
+
+def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--label", required=True)
+    parser.add_argument("--strict", action="store_true")
+    parser.add_argument("paths", nargs="+")
+    args = parser.parse_args()
+
+    totals = collections.Counter()
+    failures = []
+    seen = 0
+    print(f"=== {args.label} ===")
+    for path in find_sum_files(args.paths):
+        counts = read_counts(path, totals, failures)
+        seen += 1
+        print(
+            f"{path}: PASS={counts['PASS']} FAIL={counts['FAIL']} "
+            f"XPASS={counts['XPASS']} XFAIL={counts['XFAIL']} "
+            f"UNRESOLVED={counts['UNRESOLVED']} UNSUPPORTED={counts['UNSUPPORTED']}"
+        )
+
+    if seen == 0:
+        print(f"no .sum files found under: {' '.join(args.paths)}")
+        return 1
+
+    print(
+        "TOTAL: "
+        + " ".join(f"{key}={totals[key]}" for key in COUNTED if totals[key])
+    )
+    if failures:
+        print(f"unexpected results: {len(failures)}")
+        for failure in failures[:200]:
+            print(failure)
+        if len(failures) > 200:
+            print(f"... {len(failures) - 200} more")
+    return 1 if args.strict and failures else 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

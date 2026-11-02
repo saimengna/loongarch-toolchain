@@ -1,0 +1,360 @@
+name: Build reusable
+
+on:
+  workflow_call:
+    inputs:
+      artifact-name:
+        description: "Artifact name suffix"
+        type: string
+        default: ""
+      os:
+        description: "Runner OS list"
+        type: string
+        default: '["ubuntu-22.04","ubuntu-24.04"]'
+      mode:
+        description: "Library mode list"
+        type: string
+        default: '["newlib","linux","musl"]'
+      target:
+        description: "Target list"
+        type: string
+        default: '["loongarch64-lp64d"]'
+      compiler:
+        description: "Compiler list"
+        type: string
+        default: '["gcc","llvm"]'
+      cmodel:
+        description: "Code model list"
+        type: string
+        default: '[""]'
+      languages:
+        description: "GCC language list"
+        type: string
+        default: '[""]'
+      strip:
+        description: "unstripped, stripped, or both"
+        type: string
+        default: unstripped
+      report:
+        description: "Run tests and print reports"
+        type: boolean
+        default: true
+      build-sim:
+        description: "Build the QEMU user-mode simulator"
+        type: boolean
+        default: false
+      use-prebuilt-gnu:
+        description: "Build LLVM only, using the GNU artifact"
+        type: boolean
+        default: false
+
+env:
+  CCACHE_BASEDIR: ${{ github.workspace }}
+  CCACHE_COMPILERCHECK: content
+  CCACHE_DIR: /mnt/ccache
+  CCACHE_MAXSIZE: 2G
+  submodule_paths: |
+    binutils
+    gcc
+    gdb
+    glibc
+    newlib
+    musl
+    qemu
+    llvm
+    .git/modules
+
+jobs:
+  report-inputs:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Report inputs
+        run: |
+          echo "artifact:  ${{ inputs.artifact-name }}"
+          echo "os:        ${{ inputs.os }}"
+          echo "mode:      ${{ inputs.mode }}"
+          echo "target:    ${{ inputs.target }}"
+          echo "compiler:  ${{ inputs.compiler }}"
+          echo "cmodel:    ${{ inputs.cmodel }}"
+          echo "languages: ${{ inputs.languages }}"
+          echo "strip:     ${{ inputs.strip }}"
+          echo "report:    ${{ inputs.report }}"
+          echo "build-sim: ${{ inputs.build-sim }}"
+
+  validate-inputs:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Validate strip
+        run: |
+          case '${{ inputs.strip }}' in
+            unstripped|stripped|both) ;;
+            *) echo "invalid strip value: ${{ inputs.strip }}"; exit 1 ;;
+          esac
+
+      - name: Validate prebuilt GNU request
+        if: ${{ inputs.use-prebuilt-gnu }}
+        run: |
+          compiler="$(echo '${{ inputs.compiler }}' | tr -d '[]\" ')"
+          if [[ "$compiler" != "llvm" ]]; then
+            echo "use-prebuilt-gnu requires compiler [\"llvm\"]"
+            exit 1
+          fi
+          if [[ '${{ inputs.strip }}' == 'stripped' ]]; then
+            echo "use-prebuilt-gnu requires unstripped or both"
+            exit 1
+          fi
+
+  submodule-cache:
+    needs: [validate-inputs]
+    runs-on: ubuntu-latest
+    outputs:
+      key: ${{ steps.keygen.outputs.key }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Free runner disk space
+        run: sudo ./.github/cleanup-rootfs.sh
+
+      - name: Generate cache key
+        id: keygen
+        run: |
+          key="smcache-$(git submodule 2>/dev/null | sha1sum | cut -d' ' -f1)"
+          echo "key=$key" >> "$GITHUB_OUTPUT"
+
+      - name: Restore cache
+        id: cache
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.submodule_paths }}
+          key: ${{ steps.keygen.outputs.key }}
+
+      - name: Fetch pinned submodules
+        if: steps.cache.outputs.cache-hit != 'true'
+        shell: bash
+        run: |
+          paths="$(git submodule | awk '{print $2}')"
+          [[ -n "$paths" ]] || exit 0
+          for attempt in 1 2 3 4 5; do
+            if git submodule update --init -j "$(nproc)" --depth 1 $paths; then
+              exit 0
+            fi
+            sleep $((attempt * 30))
+          done
+          exit 1
+
+  build:
+    needs: [submodule-cache, validate-inputs]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 350
+    strategy:
+      fail-fast: false
+      matrix:
+        os: ${{ fromJSON(inputs.os) }}
+        mode: ${{ fromJSON(inputs.mode) }}
+        target: ${{ fromJSON(inputs.target) }}
+        compiler: ${{ fromJSON(inputs.compiler) }}
+        cmodel: ${{ fromJSON(inputs.cmodel) }}
+        languages: ${{ fromJSON(inputs.languages) }}
+        report:
+          - ${{ inputs.report }}
+        build-sim:
+          - ${{ inputs.build-sim }}
+    env:
+      smcache_key: ${{ needs.submodule-cache.outputs.key }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Generate toolchain names
+        id: names
+        shell: bash
+        run: |
+          case '${{ matrix.mode }}' in
+            linux)  label=glibc ;;
+            musl)   label=musl ;;
+            *)      label=elf ;;
+          esac
+          suffix='${{ inputs.artifact-name }}'
+          [[ -n "$suffix" ]] && suffix="-$suffix"
+          base="loongarch64-${label}-${{ matrix.os }}-${{ matrix.compiler }}"
+          echo "unstripped=${base}${suffix}" >> "$GITHUB_OUTPUT"
+          echo "stripped=${base}-stripped${suffix}" >> "$GITHUB_OUTPUT"
+          echo "gnu=loongarch64-${label}-${{ matrix.os }}-gcc${suffix}" >> "$GITHUB_OUTPUT"
+
+      - name: Free runner disk space
+        run: sudo ./.github/cleanup-rootfs.sh
+
+      - name: Configure swap
+        shell: bash
+        run: |
+          if swapon --noheadings --show=NAME | grep -qx /swapfile; then
+            sudo swapoff /swapfile
+          fi
+          sudo rm -f /swapfile
+          sudo fallocate -l 8G /swapfile
+          sudo chmod 600 /swapfile
+          sudo mkswap /swapfile
+          sudo swapon /swapfile
+          free -h
+
+      - name: Install dependencies
+        run: sudo ./.github/setup-apt.sh
+
+      - name: Enable ccache
+        run: echo '/usr/lib/ccache' >> "$GITHUB_PATH"
+
+      - name: Prepare ccache
+        run: |
+          sudo mkdir -p "$CCACHE_DIR"
+          sudo chown runner:runner "$CCACHE_DIR"
+
+      - name: Restore ccache
+        uses: actions/cache/restore@v4
+        with:
+          path: ${{ env.CCACHE_DIR }}
+          key: ccache-v1-${{ matrix.os }}-${{ github.run_id }}
+          restore-keys: |
+            ccache-v1-${{ matrix.os }}-
+
+      - name: Restore component cache
+        uses: actions/cache/restore@v4
+        with:
+          path: ${{ env.submodule_paths }}
+          key: ${{ env.smcache_key }}
+
+      - name: Initialize ccache
+        run: |
+          ccache -M "$CCACHE_MAXSIZE"
+          ccache -z
+          ccache -s
+
+      - name: Ensure required sources
+        shell: bash
+        run: |
+          case '${{ matrix.mode }}' in
+            linux) libc=glibc ;;
+            musl) libc=musl ;;
+            *) libc=newlib ;;
+          esac
+          if [[ '${{ inputs.use-prebuilt-gnu }}' == true ]]; then
+            components=(binutils llvm)
+          else
+            components=(binutils gcc gdb "$libc")
+            [[ '${{ matrix.compiler }}' == llvm ]] && components+=(llvm)
+          fi
+          [[ '${{ matrix.build-sim }}' == true ]] && components+=(qemu)
+          for component in "${components[@]}"; do
+            if [[ ! -d "$component" || -z "$(ls -A "$component" 2>/dev/null | grep -v '^\.git$')" ]]; then
+              bash scripts/fetch-sources.sh "$component"
+            fi
+          done
+
+      - name: Download prebuilt GNU toolchain
+        if: ${{ inputs.use-prebuilt-gnu }}
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ steps.names.outputs.gnu }}
+          path: prebuilt-gnu
+
+      - name: Configure
+        shell: bash
+        run: |
+          tuple=($(echo '${{ matrix.target }}' | tr '-' '\n'))
+          args=(--prefix=/mnt/loongarch --with-arch="${tuple[0]}" --with-abi="${tuple[1]}")
+          case '${{ matrix.mode }}' in
+            linux) args+=(--enable-linux) ;;
+            musl)  args+=(--enable-musl) ;;
+          esac
+          [[ '${{ matrix.compiler }}' == llvm ]] && args+=(--enable-llvm)
+          [[ -n '${{ matrix.cmodel }}' ]] && args+=(--with-cmodel='${{ matrix.cmodel }}')
+          [[ -n '${{ matrix.languages }}' ]] && args+=(--with-languages='${{ matrix.languages }}')
+          ./configure "${args[@]}"
+          sudo mkdir -p /mnt/loongarch
+          sudo chown -R "$USER" /mnt/loongarch
+
+      - name: Restore prebuilt GNU toolchain
+        if: ${{ inputs.use-prebuilt-gnu }}
+        shell: bash
+        run: |
+          tar xJf "prebuilt-gnu/${{ steps.names.outputs.gnu }}.tar.xz" -C /mnt/
+          rm -rf prebuilt-gnu
+          ls /mnt/loongarch/bin/*-gcc >/dev/null
+
+      - name: Build toolchain
+        if: ${{ !inputs.use-prebuilt-gnu }}
+        run: make -j"$(nproc)" '${{ matrix.mode }}'
+
+      - name: Build LLVM on prebuilt GNU toolchain
+        if: ${{ inputs.use-prebuilt-gnu }}
+        run: |
+          make -j"$(nproc)" \
+            -o 'stamps/build-gcc-${{ matrix.mode }}-stage2' \
+            'stamps/build-llvm-${{ matrix.mode }}'
+
+      - name: Build QEMU
+        if: ${{ matrix.build-sim }}
+        run: make -j"$(nproc)" build-sim
+
+      - name: Run report
+        if: |
+          matrix.os == 'ubuntu-24.04'
+          && (matrix.mode == 'linux' || matrix.mode == 'newlib')
+          && matrix.compiler == 'gcc'
+          && matrix.report == true
+        run: make -j"$(nproc)" report-${{ matrix.mode }}
+
+      - name: Show ccache statistics
+        if: always()
+        run: ccache -s
+
+      - name: Save ccache
+        if: |
+          always() && !cancelled() && github.event_name != 'pull_request'
+          && matrix.mode == 'linux' && matrix.compiler == 'gcc'
+        uses: actions/cache/save@v4
+        with:
+          path: ${{ env.CCACHE_DIR }}
+          key: ccache-v1-${{ matrix.os }}-${{ github.run_id }}
+
+      - name: Record versions
+        shell: bash
+        run: |
+          make versions
+          cp versions.txt /mnt/loongarch/VERSIONS.txt
+
+      - name: Remove build trees before packaging
+        run: rm -rf build-* stamps install-host-gcc install-newlib-nano
+
+      - name: Package unstripped
+        if: ${{ inputs.strip == 'unstripped' || inputs.strip == 'both' }}
+        run: |
+          bash scripts/package-toolchain.sh \
+            --prefix /mnt/loongarch \
+            --mode '${{ matrix.mode }}' \
+            --outdir . \
+            --name '${{ steps.names.outputs.unstripped }}'
+
+      - name: Package stripped
+        if: ${{ inputs.strip == 'stripped' || inputs.strip == 'both' }}
+        run: |
+          bash scripts/package-toolchain.sh \
+            --prefix /mnt/loongarch \
+            --mode '${{ matrix.mode }}' \
+            --outdir . \
+            --name '${{ steps.names.outputs.stripped }}' \
+            --strip
+
+      - name: Upload unstripped artifact
+        if: ${{ inputs.strip == 'unstripped' || inputs.strip == 'both' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ steps.names.outputs.unstripped }}
+          path: ${{ steps.names.outputs.unstripped }}.tar.xz
+          compression-level: 0
+
+      - name: Upload stripped artifact
+        if: ${{ inputs.strip == 'stripped' || inputs.strip == 'both' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ steps.names.outputs.stripped }}
+          path: ${{ steps.names.outputs.stripped }}.tar.xz
+          compression-level: 0

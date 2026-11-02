@@ -1,0 +1,45 @@
+name: Build
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - master
+  pull_request:
+    branches:
+      - master
+
+permissions:
+  contents: read
+
+jobs:
+  # GCC and LLVM are separate jobs.  The LLVM job consumes the GNU artifact
+  # produced by the GCC job instead of building the whole GNU toolchain twice.
+  # GitHub cannot express a dependency between individual reusable-workflow
+  # matrix rows, so all LLVM rows wait for the slowest GCC row.
+  build:
+    uses: ./.github/workflows/build-reusable.yaml
+    with:
+      artifact-name: build
+      compiler: '["gcc"]'
+
+  build-llvm:
+    needs: [build]
+    uses: ./.github/workflows/build-reusable.yaml
+    with:
+      artifact-name: build
+      compiler: '["llvm"]'
+      use-prebuilt-gnu: true
+
+  # Build newlib and QEMU together, then exercise the compiler and simulator
+  # through the testsuite.  LoongArch has no Spike/PK equivalent.
+  test-sim:
+    uses: ./.github/workflows/build-reusable.yaml
+    with:
+      artifact-name: sim
+      os: '["ubuntu-24.04"]'
+      mode: '["newlib"]'
+      target: '["loongarch64-lp64d"]'
+      compiler: '["gcc"]'
+      build-sim: true
+      report: true
