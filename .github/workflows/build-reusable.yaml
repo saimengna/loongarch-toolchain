@@ -39,6 +39,10 @@ on:
         description: "Run tests and print reports"
         type: boolean
         default: true
+      gdb:
+        description: "Build GDB"
+        type: boolean
+        default: true
       build-sim:
         description: "Build the QEMU user-mode simulator"
         type: boolean
@@ -53,6 +57,8 @@ env:
   CCACHE_COMPILERCHECK: content
   CCACHE_DIR: /mnt/ccache
   CCACHE_MAXSIZE: 2G
+  GIT_TERMINAL_PROMPT: '0'
+  GIT_SSH_COMMAND: 'ssh -o BatchMode=yes -o ConnectTimeout=10'
   submodule_paths: |
     binutils
     gcc
@@ -264,6 +270,7 @@ jobs:
             linux) args+=(--enable-linux) ;;
             musl)  args+=(--enable-musl) ;;
           esac
+          [[ '${{ inputs.gdb }}' == true ]] || args+=(--disable-gdb)
           [[ '${{ matrix.compiler }}' == llvm ]] && args+=(--enable-llvm)
           [[ -n '${{ matrix.cmodel }}' ]] && args+=(--with-cmodel='${{ matrix.cmodel }}')
           [[ -n '${{ matrix.languages }}' ]] && args+=(--with-languages='${{ matrix.languages }}')

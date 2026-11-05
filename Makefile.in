@@ -608,6 +608,7 @@ stamps/build-gdb-newlib: $(GDB_SRCDIR) $(GDB_SRC_GIT) $(PREPARATION_STAMP)
 	$(MAKE) -C $(notdir $@) $(INSTALL_TARGET)
 	mkdir -p $(dir $@) && touch $@
 
+stamps/build-gcc-newlib-stage1: ENABLED_LANGUAGES?="c,c++"
 stamps/build-gcc-newlib-stage1: $(GCC_SRCDIR) $(GCC_SRC_GIT) stamps/build-binutils-newlib
 	if test -f $</contrib/download_prerequisites && test "@NEED_GCC_EXTERNAL_LIBRARIES@" = "true"; then cd $< && ./contrib/download_prerequisites; fi
 	rm -rf $@ $(notdir $@)
@@ -619,7 +620,7 @@ stamps/build-gcc-newlib-stage1: $(GCC_SRCDIR) $(GCC_SRC_GIT) stamps/build-binuti
 		--disable-shared \
 		--disable-threads \
 		--disable-tls \
-		--enable-languages=c,c++ \
+		--enable-languages=$(ENABLED_LANGUAGES) \
 		@with_system_zlib@ \
 		--with-newlib \
 		--with-sysroot=$(INSTALL_DIR)/$(NEWLIB_TUPLE) \
