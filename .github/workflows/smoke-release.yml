@@ -16,7 +16,7 @@ jobs:
     uses: ./.github/workflows/build-reusable.yaml
     with:
       artifact-name: smoke
-      os: '["ubuntu-24.04"]'
+      os: '["ubuntu-22.04"]'
       mode: '["newlib"]'
       target: '["loongarch64-lp64d"]'
       compiler: '["gcc"]'
@@ -28,7 +28,7 @@ jobs:
 
   publish:
     needs: [build]
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-22.04
     steps:
       - name: Download artifact
         uses: actions/download-artifact@v4
@@ -61,7 +61,8 @@ jobs:
           body: |
             Small smoke-test GCC build for LoongArch.
 
-            - Host: Ubuntu 24.04 (GitHub runner)
+            - Host: Ubuntu 22.04 (GitHub runner), x86_64
+            - Host glibc requirement: 2.35+
             - Target: loongarch64-unknown-elf
             - Library: newlib
             - Components: binutils + GCC + newlib
