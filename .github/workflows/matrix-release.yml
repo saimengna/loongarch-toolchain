@@ -1,0 +1,140 @@
+name: GCC Matrix Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Release label; the final tag will be gcc-LABEL-RUN_NUMBER"
+        required: true
+        default: "6-variant"
+      scope:
+        description: "Build scope; start with one single package before full"
+        required: true
+        type: choice
+        default: single-x86-newlib
+        options:
+          - single-x86-newlib
+          - single-x86-glibc
+          - single-x86-musl
+          - single-arm-newlib
+          - single-arm-glibc
+          - single-arm-musl
+          - x86-all
+          - arm-all
+          - full
+
+permissions:
+  contents: write
+  packages: read
+
+jobs:
+  prepare:
+    runs-on: ubuntu-24.04
+    outputs:
+      os: ${{ steps.matrix.outputs.os }}
+      mode: ${{ steps.matrix.outputs.mode }}
+      expected-count: ${{ steps.matrix.outputs.expected-count }}
+    steps:
+      - name: Select matrix
+        id: matrix
+        shell: bash
+        run: |
+          set -euo pipefail
+          case '${{ inputs.scope }}' in
+            single-x86-newlib)
+              os='["ubuntu-24.04"]'; mode='["newlib"]'; expected_count=1 ;;
+            single-x86-glibc)
+              os='["ubuntu-24.04"]'; mode='["linux"]'; expected_count=1 ;;
+            single-x86-musl)
+              os='["ubuntu-24.04"]'; mode='["musl"]'; expected_count=1 ;;
+            single-arm-newlib)
+              os='["ubuntu-24.04-arm"]'; mode='["newlib"]'; expected_count=1 ;;
+            single-arm-glibc)
+              os='["ubuntu-24.04-arm"]'; mode='["linux"]'; expected_count=1 ;;
+            single-arm-musl)
+              os='["ubuntu-24.04-arm"]'; mode='["musl"]'; expected_count=1 ;;
+            x86-all)
+              os='["ubuntu-24.04"]'; mode='["newlib","linux","musl"]'; expected_count=3 ;;
+            arm-all)
+              os='["ubuntu-24.04-arm"]'; mode='["newlib","linux","musl"]'; expected_count=3 ;;
+            full)
+              os='["ubuntu-24.04","ubuntu-24.04-arm"]'
+              mode='["newlib","linux","musl"]'
+              expected_count=6 ;;
+            *)
+              echo "unsupported scope: ${{ inputs.scope }}" >&2
+              exit 1 ;;
+          esac
+          echo "os=$os" >> "$GITHUB_OUTPUT"
+          echo "mode=$mode" >> "$GITHUB_OUTPUT"
+          echo "expected-count=$expected_count" >> "$GITHUB_OUTPUT"
+
+  build:
+    needs: [prepare]
+    uses: ./.github/workflows/build-reusable.yaml
+    with:
+      artifact-name: release
+      os: ${{ needs.prepare.outputs.os }}
+      mode: ${{ needs.prepare.outputs.mode }}
+      target: '["loongarch64-lp64d"]'
+      compiler: '["gcc"]'
+      strip: unstripped
+      report: false
+      gdb: false
+      build-sim: false
+      builder-image-repository: ghcr.io/${{ github.repository_owner }}/loongarch-builder
+      builder-image-tag: glibc228
+      host-glibc-max: "2.28"
+      target-glibc-max: "2.36"
+      fetch-locked: true
+
+  publish:
+    needs: [build, prepare]
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Download artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          merge-multiple: true
+
+      - name: Show artifacts
+        run: find artifacts -type f -name '*.tar.xz' -print | sort
+
+      - name: Check expected artifact count
+        shell: bash
+        run: |
+          set -euo pipefail
+          count="$(find artifacts -type f -name '*.tar.xz' | wc -l)"
+          echo "artifact count: $count"
+          test "$count" -eq '${{ needs.prepare.outputs.expected-count }}'
+
+      - name: Create draft release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: gcc-${{ inputs.version }}-${{ inputs.scope }}-${{ github.run_number }}
+          target_commitish: ${{ github.sha }}
+          name: "LoongArch GCC ${{ inputs.scope }} ${{ inputs.version }} #${{ github.run_number }}"
+          body: |
+            LoongArch GCC toolchain release.
+
+            Build scope: `${{ inputs.scope }}`
+            Expected artifacts: `${{ needs.prepare.outputs.expected-count }}`
+
+            Hosts: x86_64 and aarch64, built inside a glibc 2.28 container.
+            Host glibc requirement: 2.28 or newer.
+            Target: `loongarch64-lp64d`.
+            Libraries: newlib (`loongarch64-unknown-elf`), glibc
+            (`loongarch64-unknown-linux-gnu`, target glibc 2.36), and musl
+            (`loongarch64-unknown-linux-musl`).
+            Components: binutils + GCC + target C library. GDB, LLVM, QEMU,
+            and testsuite runs are not included.
+
+            Source revisions are locked in `sources.lock` and recorded in
+            `VERSIONS.txt` inside every archive.
+
+            Source revision: `${{ github.sha }}`
+          files: artifacts/*.tar.xz
+          draft: true
+          prerelease: true
+          fail_on_unmatched_files: true

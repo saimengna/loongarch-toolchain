@@ -51,6 +51,26 @@ on:
         description: "Build LLVM only, using the GNU artifact"
         type: boolean
         default: false
+      builder-image-repository:
+        description: "Optional GHCR repository for the glibc-2.28 build image"
+        type: string
+        default: ""
+      builder-image-tag:
+        description: "Builder image tag prefix"
+        type: string
+        default: "glibc228"
+      host-glibc-max:
+        description: "Highest host glibc symbol version allowed"
+        type: string
+        default: "2.28"
+      target-glibc-max:
+        description: "Highest target glibc symbol version allowed"
+        type: string
+        default: "2.36"
+      fetch-locked:
+        description: "Fetch the exact revisions from sources.lock"
+        type: boolean
+        default: false
 
 env:
   CCACHE_BASEDIR: ${{ github.workspace }}
@@ -86,6 +106,9 @@ jobs:
           echo "strip:     ${{ inputs.strip }}"
           echo "report:    ${{ inputs.report }}"
           echo "build-sim: ${{ inputs.build-sim }}"
+          echo "builder:   ${{ inputs.builder-image-repository }}:${{ inputs.builder-image-tag }}"
+          echo "host glibc max:   ${{ inputs.host-glibc-max }}"
+          echo "target glibc max: ${{ inputs.target-glibc-max }}"
 
   validate-inputs:
     runs-on: ubuntu-latest
@@ -110,6 +133,21 @@ jobs:
             exit 1
           fi
 
+      - name: Validate builder image path
+        if: ${{ inputs.builder-image-repository != '' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          compilers="$(echo '${{ inputs.compiler }}' | tr -d '[]\" ')"
+          if [[ "$compilers" != "gcc" ]]; then
+            echo "builder-image path currently supports GCC only"
+            exit 1
+          fi
+          if [[ '${{ inputs.gdb }}' == true || '${{ inputs.build-sim }}' == true || '${{ inputs.report }}' == true || '${{ inputs.use-prebuilt-gnu }}' == true ]]; then
+            echo "builder-image path does not support GDB, QEMU, reports, or prebuilt GNU"
+            exit 1
+          fi
+
   submodule-cache:
     needs: [validate-inputs]
     runs-on: ubuntu-latest
@@ -124,7 +162,10 @@ jobs:
       - name: Generate cache key
         id: keygen
         run: |
-          key="smcache-$(git submodule 2>/dev/null | sha1sum | cut -d' ' -f1)"
+          source_key="$(printf '%s\n' '${{ inputs.mode }}' '${{ inputs.compiler }}' '${{ inputs.gdb }}' '${{ inputs.build-sim }}' '${{ inputs.use-prebuilt-gnu }}' | sha1sum | cut -d' ' -f1)"
+          lock_key="$(sha256sum sources.lock 2>/dev/null | cut -d' ' -f1 || true)"
+          rev_key="$(git rev-parse HEAD 2>/dev/null || git submodule 2>/dev/null | sha1sum | cut -d' ' -f1)"
+          key="smcache-${{ github.run_id }}-${source_key}-${lock_key}-${rev_key}"
           echo "key=$key" >> "$GITHUB_OUTPUT"
 
       - name: Restore cache
@@ -134,19 +175,39 @@ jobs:
           path: ${{ env.submodule_paths }}
           key: ${{ steps.keygen.outputs.key }}
 
-      - name: Fetch pinned submodules
+      - name: Fetch sources for requested matrix
         if: steps.cache.outputs.cache-hit != 'true'
         shell: bash
         run: |
-          paths="$(git submodule | awk '{print $2}')"
-          [[ -n "$paths" ]] || exit 0
-          for attempt in 1 2 3 4 5; do
-            if git submodule update --init -j "$(nproc)" --depth 1 $paths; then
-              exit 0
+          set -euo pipefail
+          modes='${{ inputs.mode }}'
+          compilers='${{ inputs.compiler }}'
+          locked=0
+
+          if [[ -n '${{ inputs.builder-image-repository }}' || '${{ inputs.fetch-locked }}' == true ]]; then
+            locked=1
+            export FETCH_LOCKED=1
+          fi
+
+          if [[ '${{ inputs.use-prebuilt-gnu }}' == true ]]; then
+            components=(binutils llvm)
+          else
+            components=(binutils gcc)
+            if [[ "$modes" == *newlib* ]]; then components+=(newlib); fi
+            if [[ "$modes" == *linux* ]]; then components+=(glibc); fi
+            if [[ "$modes" == *musl* ]]; then components+=(musl); fi
+            if [[ '${{ inputs.gdb }}' == true ]]; then components+=(gdb); fi
+            if [[ "$compilers" == *llvm* ]]; then components+=(llvm); fi
+          fi
+          if [[ '${{ inputs.build-sim }}' == true ]]; then components+=(qemu); fi
+
+          for component in "${components[@]}"; do
+            if [[ "$locked" == 1 ]]; then
+              bash scripts/fetch-sources.sh "$component"
+            elif [[ ! -d "$component" || -z "$(ls -A "$component" 2>/dev/null | grep -v '^\.git$')" ]]; then
+              bash scripts/fetch-sources.sh "$component"
             fi
-            sleep $((attempt * 30))
           done
-          exit 1
 
   build:
     needs: [submodule-cache, validate-inputs]
@@ -181,10 +242,34 @@ jobs:
           esac
           suffix='${{ inputs.artifact-name }}'
           [[ -n "$suffix" ]] && suffix="-$suffix"
-          base="loongarch64-${label}-${{ matrix.os }}-${{ matrix.compiler }}"
+          host_arch="$(uname -m)"
+          host_glibc='${{ inputs.host-glibc-max }}'
+          target_glibc='${{ inputs.target-glibc-max }}'
+          host_tag="${host_glibc//./}"
+          target_tag="${target_glibc//./}"
+          image_arch=""
+          case "$host_arch" in
+            x86_64) image_arch=amd64 ;;
+            aarch64) image_arch=arm64 ;;
+            *) echo "unsupported host arch: $host_arch" >&2; exit 1 ;;
+          esac
+          if [[ -n '${{ inputs.builder-image-repository }}' ]]; then
+            if [[ "$label" == glibc ]]; then
+              base="loongarch64-${label}-${host_arch}-host-glibc${host_tag}-target-glibc${target_tag}"
+            else
+              base="loongarch64-${label}-${host_arch}-host-glibc${host_tag}"
+            fi
+            repo='${{ inputs.builder-image-repository }}'
+            image="${repo,,}:${{ inputs.builder-image-tag }}-${image_arch}"
+          else
+            base="loongarch64-${label}-${{ matrix.os }}-${{ matrix.compiler }}"
+            image=""
+          fi
           echo "unstripped=${base}${suffix}" >> "$GITHUB_OUTPUT"
           echo "stripped=${base}-stripped${suffix}" >> "$GITHUB_OUTPUT"
           echo "gnu=loongarch64-${label}-${{ matrix.os }}-gcc${suffix}" >> "$GITHUB_OUTPUT"
+          echo "builder-image=$image" >> "$GITHUB_OUTPUT"
+          echo "host-arch=$host_arch" >> "$GITHUB_OUTPUT"
 
       - name: Free runner disk space
         run: sudo ./.github/cleanup-rootfs.sh
@@ -203,17 +288,21 @@ jobs:
           free -h
 
       - name: Install dependencies
+        if: ${{ inputs.builder-image-repository == '' }}
         run: sudo ./.github/setup-apt.sh
 
       - name: Enable ccache
+        if: ${{ inputs.builder-image-repository == '' }}
         run: echo '/usr/lib/ccache' >> "$GITHUB_PATH"
 
       - name: Prepare ccache
+        if: ${{ inputs.builder-image-repository == '' }}
         run: |
           sudo mkdir -p "$CCACHE_DIR"
           sudo chown runner:runner "$CCACHE_DIR"
 
       - name: Restore ccache
+        if: ${{ inputs.builder-image-repository == '' }}
         uses: actions/cache/restore@v4
         with:
           path: ${{ env.CCACHE_DIR }}
@@ -228,6 +317,7 @@ jobs:
           key: ${{ env.smcache_key }}
 
       - name: Initialize ccache
+        if: ${{ inputs.builder-image-repository == '' }}
         run: |
           ccache -M "$CCACHE_MAXSIZE"
           ccache -z
@@ -236,6 +326,11 @@ jobs:
       - name: Ensure required sources
         shell: bash
         run: |
+          locked=0
+          if [[ -n '${{ inputs.builder-image-repository }}' || '${{ inputs.fetch-locked }}' == true ]]; then
+            locked=1
+            export FETCH_LOCKED=1
+          fi
           case '${{ matrix.mode }}' in
             linux) libc=glibc ;;
             musl) libc=musl ;;
@@ -244,15 +339,64 @@ jobs:
           if [[ '${{ inputs.use-prebuilt-gnu }}' == true ]]; then
             components=(binutils llvm)
           else
-            components=(binutils gcc gdb "$libc")
+            components=(binutils gcc "$libc")
+            [[ '${{ inputs.gdb }}' == true ]] && components+=(gdb)
             [[ '${{ matrix.compiler }}' == llvm ]] && components+=(llvm)
           fi
           [[ '${{ matrix.build-sim }}' == true ]] && components+=(qemu)
           for component in "${components[@]}"; do
-            if [[ ! -d "$component" || -z "$(ls -A "$component" 2>/dev/null | grep -v '^\.git$')" ]]; then
+            if [[ "$locked" == 1 ]]; then
+              bash scripts/fetch-sources.sh "$component"
+            elif [[ ! -d "$component" || -z "$(ls -A "$component" 2>/dev/null | grep -v '^\.git$')" ]]; then
               bash scripts/fetch-sources.sh "$component"
             fi
           done
+
+      - name: Log in to GHCR
+        if: ${{ inputs.builder-image-repository != '' }}
+        env:
+          GHCR_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          printf '%s' "$GHCR_TOKEN" | docker login ghcr.io -u '${{ github.actor }}' --password-stdin
+
+      - name: Pull builder image
+        if: ${{ inputs.builder-image-repository != '' }}
+        run: |
+          set -euo pipefail
+          image='${{ steps.names.outputs.builder-image }}'
+          test -n "$image"
+          docker pull "$image"
+
+      - name: Build and package in glibc 2.28 container
+        if: ${{ inputs.builder-image-repository != '' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          image='${{ steps.names.outputs.builder-image }}'
+          prefix="$GITHUB_WORKSPACE/install-toolchain"
+          test -n "$image"
+          docker run --rm --init \
+            --user "$(id -u):$(id -g)" \
+            -e HOME=/tmp \
+            -e USER=runner \
+            -e LOGNAME=runner \
+            -e GIT_TERMINAL_PROMPT=0 \
+            -e BUILDER_IMAGE="$image" \
+            -e FETCH_LOCKED=1 \
+            -v "$GITHUB_WORKSPACE:$GITHUB_WORKSPACE" \
+            -w "$GITHUB_WORKSPACE" \
+            "$image" \
+            bash -lc "cd '$GITHUB_WORKSPACE' && bash scripts/ci-build-in-container.sh \
+              --mode '${{ matrix.mode }}' \
+              --target '${{ matrix.target }}' \
+              --prefix '$prefix' \
+              --outdir '$GITHUB_WORKSPACE' \
+              --unstripped-name '${{ steps.names.outputs.unstripped }}' \
+              --stripped-name '${{ steps.names.outputs.stripped }}' \
+              --strip-mode '${{ inputs.strip }}' \
+              --host-glibc-max '${{ inputs.host-glibc-max }}' \
+              --target-glibc-max '${{ inputs.target-glibc-max }}'"
 
       - name: Download prebuilt GNU toolchain
         if: ${{ inputs.use-prebuilt-gnu }}
@@ -262,6 +406,7 @@ jobs:
           path: prebuilt-gnu
 
       - name: Configure
+        if: ${{ inputs.builder-image-repository == '' }}
         shell: bash
         run: |
           tuple=($(echo '${{ matrix.target }}' | tr '-' '\n'))
@@ -287,35 +432,55 @@ jobs:
           ls /mnt/loongarch/bin/*-gcc >/dev/null
 
       - name: Build toolchain
-        if: ${{ !inputs.use-prebuilt-gnu }}
+        if: ${{ inputs.builder-image-repository == '' && !inputs.use-prebuilt-gnu }}
         run: make -j"$(nproc)" '${{ matrix.mode }}'
 
+      - name: Verify built toolchain
+        if: ${{ inputs.builder-image-repository == '' && matrix.compiler == 'gcc' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          case '${{ matrix.mode }}' in
+            linux) triple=loongarch64-unknown-linux-gnu ;;
+            musl)  triple=loongarch64-unknown-linux-musl ;;
+            *)     triple=loongarch64-unknown-elf ;;
+          esac
+          cc="/mnt/loongarch/bin/${triple}-gcc"
+          test -x "$cc"
+          "$cc" --version
+          "$cc" -dumpmachine | grep -qx "$triple"
+          printf 'int smoke(void) { return 42; }\n' > /tmp/smoke.c
+          "$cc" -c /tmp/smoke.c -o /tmp/smoke.o
+          file /tmp/smoke.o | grep -qi loongarch
+
       - name: Build LLVM on prebuilt GNU toolchain
-        if: ${{ inputs.use-prebuilt-gnu }}
+        if: ${{ inputs.builder-image-repository == '' && inputs.use-prebuilt-gnu }}
         run: |
           make -j"$(nproc)" \
             -o 'stamps/build-gcc-${{ matrix.mode }}-stage2' \
             'stamps/build-llvm-${{ matrix.mode }}'
 
       - name: Build QEMU
-        if: ${{ matrix.build-sim }}
+        if: ${{ inputs.builder-image-repository == '' && matrix.build-sim }}
         run: make -j"$(nproc)" build-sim
 
       - name: Run report
         if: |
-          matrix.os == 'ubuntu-24.04'
+          inputs.builder-image-repository == ''
+          && matrix.os == 'ubuntu-24.04'
           && (matrix.mode == 'linux' || matrix.mode == 'newlib')
           && matrix.compiler == 'gcc'
           && matrix.report == true
         run: make -j"$(nproc)" report-${{ matrix.mode }}
 
       - name: Show ccache statistics
-        if: always()
+        if: ${{ always() && inputs.builder-image-repository == '' }}
         run: ccache -s
 
       - name: Save ccache
         if: |
           always() && !cancelled() && github.event_name != 'pull_request'
+          && inputs.builder-image-repository == ''
           && matrix.mode == 'linux' && matrix.compiler == 'gcc'
         uses: actions/cache/save@v4
         with:
@@ -323,16 +488,18 @@ jobs:
           key: ccache-v1-${{ matrix.os }}-${{ github.run_id }}
 
       - name: Record versions
+        if: ${{ inputs.builder-image-repository == '' }}
         shell: bash
         run: |
           make versions
           cp versions.txt /mnt/loongarch/VERSIONS.txt
 
       - name: Remove build trees before packaging
+        if: ${{ inputs.builder-image-repository == '' }}
         run: rm -rf build-* stamps install-host-gcc install-newlib-nano
 
       - name: Package unstripped
-        if: ${{ inputs.strip == 'unstripped' || inputs.strip == 'both' }}
+        if: ${{ inputs.builder-image-repository == '' && (inputs.strip == 'unstripped' || inputs.strip == 'both') }}
         run: |
           bash scripts/package-toolchain.sh \
             --prefix /mnt/loongarch \
@@ -341,7 +508,7 @@ jobs:
             --name '${{ steps.names.outputs.unstripped }}'
 
       - name: Package stripped
-        if: ${{ inputs.strip == 'stripped' || inputs.strip == 'both' }}
+        if: ${{ inputs.builder-image-repository == '' && (inputs.strip == 'stripped' || inputs.strip == 'both') }}
         run: |
           bash scripts/package-toolchain.sh \
             --prefix /mnt/loongarch \

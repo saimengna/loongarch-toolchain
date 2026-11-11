@@ -1,0 +1,8 @@
+# Source revisions used by the reproducible CI build.
+# Format: component SHA
+# Update this file intentionally when moving the toolchain baseline.
+binutils a760a797aeb6e9143d60f0b8b2b8f71da88cabcf
+gcc      5454af039f44aecefbd30fca712e2c5ca0714c5b
+glibc    e97cfe2293ed097eb3d0b4c18274d22855e65130
+newlib   8bf72367815712eb69173e89f7daa2d64b8aa0b3
+musl     c4e1bb3994c14ed5112c894d15a451bf00f0d501

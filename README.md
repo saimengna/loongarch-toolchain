@@ -88,6 +88,15 @@ make fetch FETCH_ARGS=-f
 FETCH_USE_SUBMODULE=0 make fetch
 ```
 
+正式 CI 按根目录的 `sources.lock` 固定每个组件的 commit。手动复现锁定版本：
+
+```bash
+FETCH_LOCKED=1 scripts/fetch-sources.sh gcc
+```
+
+锁定模式会校验已有源码的 `HEAD`；不一致时会从镜像表拉取锁定的 SHA。只改
+`sources.lock` 才会改变正式构建的源码版本，`--remote` 不会参与锁定模式。
+
 ## 构建目标
 
 | 目标 | 作用 |
@@ -137,8 +146,10 @@ make report-linux REPORT_STRICT=1
 .
 ├── configure / configure.ac      顶层 autoconf 配置
 ├── Makefile.in                   顶层构建规则
+├── sources.lock                  正式构建使用的源码 commit
 ├── linux-headers/include/        vendored LoongArch UAPI 头文件
 ├── scripts/                      源码拉取、DejaGNU board、QEMU/awk/sed wrapper
+├── .github/containers/          glibc 2.28 构建容器
 ├── .github/                      CI 与 runner 辅助脚本
 ├── build-*/                      各组件 out-of-tree 构建目录
 ├── stamps/                       已完成步骤的 stamp 文件
@@ -155,20 +166,41 @@ nightly/定时任务：
   提 PR 时运行。
 - GCC 与 LLVM 分成两个 job。LLVM job 下载同一轮 GCC job 产出的工具链，
   再只构建 LLVM，避免重复构建 GNU 工具链。
-- 默认矩阵覆盖 Ubuntu 22.04/24.04、newlib/linux/musl、GCC/LLVM，并支持
-  `unstripped`、`stripped`、`both` 三种打包方式。
+- `build.yml` / `release.yml` 仍保留普通宿主直编矩阵，覆盖 Ubuntu
+  22.04/24.04、newlib/linux/musl、GCC/LLVM；正式稳定的 glibc 2.28 发布走
+  `matrix-release.yml`。
 - `test-sim` 行构建 newlib + QEMU，并用 testsuite 做实际运行验证。
+- `.github/workflows/builder-image.yml`：仅手动触发，分别在
+  `ubuntu-24.04` 和 `ubuntu-24.04-arm` 上构建
+  `ghcr.io/OWNER/loongarch-builder:glibc228-amd64` 与
+  `ghcr.io/OWNER/loongarch-builder:glibc228-arm64`。镜像基于
+  `manylinux_2_28`，所以编出来的宿主编译器只要求 glibc 2.28+。
+- `.github/workflows/matrix-release.yml`：仅手动触发，使用上面的构建镜像
+  生成 6 个 GCC 工具链：x86_64/ARM64 × newlib/glibc/musl，并汇总到一个
+  草稿 Release。`scope` 可用 `single-{x86|arm}-{newlib|glibc|musl}`
+  单独验证，或用 `x86-all`、`arm-all`、`full`。正式发布选择 `full`。
 - `.github/workflows/release.yml`：推送 `v*` tag 时构建 GCC/LLVM，并发布
   stripped 和 unstripped 两种 `.tar.xz` 到 GitHub Release。
 
-CI 中的上游源码按子模块记录的 commit 构建，保证同一提交可复现。本机执行
-`make fetch` 时默认通过 `git submodule update --remote` 获取 `.gitmodules`
-中对应分支的最新提交。
+正式发布矩阵会自动设置 `FETCH_LOCKED=1`，从 `sources.lock` 读取固定
+commit；源码缓存 key 也包含锁文件哈希。构建在 `manylinux_2_28` 容器内完成，
+因此用户不需要安装 AlmaLinux 或 `manylinux`，容器只是构建环境。
+
+第一次使用请按顺序操作：
+
+1. 在 Actions 里手动运行 `Build glibc 2.28 builder images`。
+2. 运行 `GCC Matrix Release`，先选 `single-x86-newlib` 或
+   `single-arm-newlib` 验证链路。
+3. 再选 `single-x86-glibc`、`single-arm-glibc`，最后选 `full`。
+
+构建出来的宿主二进制只要求 glibc 2.28+；`newlib` 和 `musl` 目标本身不使用
+glibc。所有归档里的 `VERSIONS.txt` 会记录实际源码 commit，`SOURCES.lock`
+记录本次构建的锁文件，`BUILD-INFO.txt` 记录宿主架构、glibc 上限和目标库。
 
 产物命名格式：
 
 ```text
-loongarch64-{elf|glibc|musl}-{ubuntu-22.04|ubuntu-24.04}-{gcc|llvm}[-stripped][-build|-sim|-release].tar.xz
+loongarch64-{elf|glibc|musl}-{x86_64|aarch64}-host-glibc228[-target-glibc236][-release].tar.xz
 ```
 
 ## 注意
@@ -181,4 +213,6 @@ loongarch64-{elf|glibc|musl}-{ubuntu-22.04|ubuntu-24.04}-{gcc|llvm}[-stripped][-
 - `--enable-llvm` 会显著增加构建时间和磁盘占用；时间紧张时先只构建 GCC。
 - LLVM 需要 Python ≥3.8；系统 `python3` 太旧时用
   `make LLVM_PYTHON=/path/to/python3 QEMU_PYTHON=/path/to/python3`。
+- 当前正式容器矩阵只构建 GCC，不包含 GDB、LLVM、QEMU 和 testsuite；这些
+  仍走普通的本机构建流程。`x86_64` 和 `aarch64` 产物不能混用。
 - 子模块提交和 CI 发布流程还需要在第一次真实推送后做一次端到端验证。
