@@ -524,6 +524,7 @@ jobs:
           name: ${{ steps.names.outputs.unstripped }}
           path: ${{ steps.names.outputs.unstripped }}.tar.xz
           compression-level: 0
+          retention-days: 1
 
       - name: Upload stripped artifact
         if: ${{ inputs.strip == 'stripped' || inputs.strip == 'both' }}
@@ -532,3 +533,4 @@ jobs:
           name: ${{ steps.names.outputs.stripped }}
           path: ${{ steps.names.outputs.stripped }}.tar.xz
           compression-level: 0
+          retention-days: 1

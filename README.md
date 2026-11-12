@@ -185,6 +185,8 @@ nightly/定时任务：
 正式发布矩阵会自动设置 `FETCH_LOCKED=1`，从 `sources.lock` 读取固定
 commit；源码缓存 key 也包含锁文件哈希。构建在 `manylinux_2_28` 容器内完成，
 因此用户不需要安装 AlmaLinux 或 `manylinux`，容器只是构建环境。
+中间构建产物作为 Actions Artifact 只保留 1 天；长期保存以 GitHub Release
+附件为准。
 
 第一次使用请按顺序操作：
 
