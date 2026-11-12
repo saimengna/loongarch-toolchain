@@ -188,17 +188,11 @@ nightly/定时任务：
   重新解压并检查每个编译器。
 - `.github/workflows/build.yml`：仅供手动开发验证，保留 Ubuntu 22.04/24.04
   的普通宿主构建、LLVM 和 QEMU/testsuite 能力；不参与正式发布。
-- `.github/workflows/smoke-release.yml`：手动 smoke 构建，用于快速验证
-  Ubuntu 22.04 + newlib 链路；它产生草稿预发布，不是正式发布。
 - `.github/workflows/builder-image.yml`：仅手动触发，分别在
   `ubuntu-24.04` 和 `ubuntu-24.04-arm` 上构建
   `ghcr.io/OWNER/loongarch-builder:glibc228-amd64` 与
   `ghcr.io/OWNER/loongarch-builder:glibc228-arm64`。镜像基于
   `manylinux_2_28`，所以编出来的宿主编译器只要求 glibc 2.28+。
-- `.github/workflows/matrix-release.yml`：手动矩阵验证，使用上面的构建镜像
-  生成单个或全部六个 GCC 工具链，并创建草稿预发布。`scope` 可用
-  `single-{x86|arm}-{newlib|glibc|musl}` 单独验证，或用 `x86-all`、
-  `arm-all`、`full`。正式发布请推送 `v*` tag，不要使用这个 workflow。
 
 正式发布矩阵会自动设置 `FETCH_LOCKED=1`，从 `sources.lock` 读取固定
 commit；源码缓存 key 也包含锁文件哈希。构建在 `manylinux_2_28` 容器内完成，
@@ -211,10 +205,8 @@ commit；源码缓存 key 也包含锁文件哈希。构建在 `manylinux_2_28` 
 1. 在 Actions 里手动运行 `Build glibc 2.28 builder images`。
 2. 修改 gitlink 后推送 `main` 或提交 PR，自动触发按 gitlink 构建的
    `Source CI`。
-3. 运行 `GCC Matrix Test`，先选 `single-x86-newlib` 或
-   `single-arm-newlib` 验证链路。
-4. 再选 `single-x86-glibc`、`single-arm-glibc`，最后选 `full`。
-5. 发版前把 `sources.lock` 更新到要发布的 commit，再推送 `v0.1.0` 这类
+3. 如需手动验证普通宿主构建、LLVM 或 QEMU/testsuite，运行 `Build`。
+4. 发版前把 `sources.lock` 更新到要发布的 commit，再推送 `v0.1.0` 这类
    tag，由正式的 `Release` workflow 构建并发布六个 glibc 2.28 GCC 包。
 
 构建出来的宿主二进制只要求 glibc 2.28+；`newlib` 和 `musl` 目标本身不使用
