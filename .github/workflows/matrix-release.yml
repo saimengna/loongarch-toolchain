@@ -1,10 +1,10 @@
-name: GCC Matrix Release
+name: GCC Matrix Test
 
 on:
   workflow_dispatch:
     inputs:
       version:
-        description: "Release label; the final tag will be gcc-LABEL-RUN_NUMBER"
+        description: "Test/draft label; official releases use a v* git tag"
         required: true
         default: "6-variant"
       scope:
@@ -116,7 +116,10 @@ jobs:
           target_commitish: ${{ github.sha }}
           name: "LoongArch GCC ${{ inputs.scope }} ${{ inputs.version }} #${{ github.run_number }}"
           body: |
-            LoongArch GCC toolchain release.
+            LoongArch GCC toolchain test/draft build.
+
+            This manual workflow is for matrix validation. The formal release
+            is produced by the `Release` workflow from a `v*` git tag.
 
             Build scope: `${{ inputs.scope }}`
             Expected artifacts: `${{ needs.prepare.outputs.expected-count }}`
