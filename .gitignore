@@ -6,16 +6,8 @@
 scripts/wrapper/awk/awk
 scripts/wrapper/sed/sed
 
-# Component sources and build products
-/gcc/
-/binutils/
-/gdb/
-/glibc/
-/newlib/
-/musl/
+# Build products. Component sources are tracked as git submodules.
 /uclibc-ng/
-/qemu/
-/llvm/
 /build-*/
 /stamps/
 /install-*/

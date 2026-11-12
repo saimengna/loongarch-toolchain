@@ -13,7 +13,8 @@
 #   SOURCE_LOCK=/path/to/sources.lock FETCH_LOCKED=1 ...
 #
 # 行为:
-#   1) 普通模式：已有源码跳过；空目录优先走 git submodule --remote，再尝试镜像。
+#   1) 普通模式：gitlink 目录按主仓库记录的 commit 初始化；其他已有源码跳过；
+#      拉取失败时再尝试镜像。
 #   2) 锁定模式：从 sources.lock 读取 commit，已经存在则校验 HEAD，不一致则
 #      从当前组件的镜像列表拉取该 commit；不会使用 --remote。
 #   3) 结束后打印每个项目的状态；有失败则退出码非 0
@@ -92,6 +93,11 @@ has_git() {       # $1 = 目录
     [ -d "$1/.git" ] || [ -f "$1/.git" ]
 }
 
+is_submodule() {  # $1 = 目录
+    git -C "$srcdir" ls-files -s -- "$1" 2>/dev/null \
+        | awk '$1 == 160000 { found = 1 } END { exit found ? 0 : 1 }'
+}
+
 run() {           # 统一处理 dry-run
     if [ "$dry" = 1 ]; then
         printf '       [dry-run] %s\n' "$*"
@@ -116,9 +122,9 @@ clean_dir() {     # 安全删除：dry-run 不删；有真实源码且未 --forc
 
 try_submodule() { # $1 = 目录
     [ "$use_submodule" = 1 ] || return 1
-    [ -d "$srcdir/.git" ] || return 1
+    git -C "$srcdir" rev-parse --git-dir >/dev/null 2>&1 || return 1
     [ -f "$srcdir/.gitmodules" ] || return 1
-    run git submodule update --init --remote --depth 1 "$1"
+    run git -C "$srcdir" submodule update --init --depth 1 "$1"
 }
 
 try_mirrors() {   # $1=目录 $2=分支 $3.. = URL
@@ -210,6 +216,14 @@ while IFS='|' read -r name path branch urls; do
         continue
     fi
 
+    if [ "$force" = 0 ] && is_submodule "$path"; then
+        if try_submodule "$path"; then
+            printf '%-12s 跳过（已按 gitlink 更新）\n' "$name"
+            names+=("$name"); states+=("跳过"); details+=("gitlink 已同步")
+            continue
+        fi
+    fi
+
     if [ "$force" = 0 ] && has_sources "$path"; then
         # 已有源码：不动它，只补一个 .git 以满足 Makefile 的前置条件
         if [ ! -e "$path/.git" ]; then
@@ -225,7 +239,7 @@ while IFS='|' read -r name path branch urls; do
     state=""; detail=""
 
     if try_submodule "$path"; then
-        state="成功"; detail="方案B: git submodule --remote (${branch:-默认分支})"
+        state="成功"; detail="git submodule (gitlink commit)"
     elif try_mirrors "$path" "$branch" $urls; then
         state="成功"; detail="备用镜像 clone (${branch:-默认分支})"
     else

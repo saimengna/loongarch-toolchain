@@ -21,12 +21,15 @@ musl、qemu 和 llvm 从各自的上游仓库获取，不在本仓库重复存�
 
 ## 快速开始
 
-首次克隆时初始化子模块：
+首次克隆：
 
 ```bash
-git clone --recursive git@github.com:YOU/loongarch-toolchain.git
+git clone git@github.com:YOU/loongarch-toolchain.git
 cd loongarch-toolchain
 ```
+
+源码目录使用真正的 Git submodule。执行 `make` 时会按主仓库记录的
+gitlink commit 自动初始化所需子模块，因此不需要加 `--recursive`。
 
 配置并构建 glibc 工具链：
 
@@ -74,9 +77,9 @@ make fetch
 如果还没有生成 Makefile，也可以直接运行
 `bash scripts/fetch-sources.sh`。
 
-`make fetch` 会优先尝试子模块，失败后按
-`scripts/fetch-sources.sh` 顶部的镜像表逐个尝试备用源。已有源码默认
-不覆盖；强制重新拉取使用：
+`make fetch` 会优先按 gitlink 初始化子模块，失败后按
+`scripts/fetch-sources.sh` 顶部的镜像表逐个尝试备用源。gitlink 子模块会
+同步到主仓库记录的 commit；非 gitlink 的已有源码默认不覆盖。强制重新拉取使用：
 
 ```bash
 make fetch FETCH_ARGS=-f
@@ -96,6 +99,19 @@ FETCH_LOCKED=1 scripts/fetch-sources.sh gcc
 
 锁定模式会校验已有源码的 `HEAD`；不一致时会从镜像表拉取锁定的 SHA。只改
 `sources.lock` 才会改变正式构建的源码版本，`--remote` 不会参与锁定模式。
+
+开发构建使用 gitlink 记录的源码版本。需要升级某个组件时，可以执行：
+
+```bash
+git submodule update --remote gcc
+git -C gcc rev-parse HEAD
+git add gcc sources.lock
+git commit -m "gcc: update source commit"
+```
+
+开发版以 gitlink 为准，提交后 `Source CI` 会按这个 commit 构建。若该 commit
+也要进入正式 Release，还需要把 `sources.lock` 中对应组件的 SHA 改成同一个
+commit；正式 tag Release 以 `sources.lock` 为准。
 
 ## 构建目标
 
@@ -162,6 +178,10 @@ make report-linux REPORT_STRICT=1
 GitHub Actions 使用与本地相同的 `configure` 和 `make` 流程，但没有
 nightly/定时任务：
 
+- `.github/workflows/source-ci.yml`：推送或提 PR 到 `main`，且修改了
+  `gcc`、`binutils`、`glibc`、`newlib`、`musl` 等 gitlink、`.gitmodules`
+  或源码拉取脚本时自动触发。它按 gitlink 的源码 commit 构建六个 GCC 包用于
+  验证，但不创建 Release。该 workflow 没有 `schedule`，不会每天定时运行。
 - `.github/workflows/release.yml`：正式发布链路。推送 `v*` tag 时在
   glibc 2.28 容器中按 `sources.lock` 构建六个 GCC 包：
   x86_64/aarch64 × newlib/glibc/musl。发布包会上传 `SHA256SUMS`，并在发布前
@@ -189,11 +209,13 @@ commit；源码缓存 key 也包含锁文件哈希。构建在 `manylinux_2_28` 
 第一次使用请按顺序操作：
 
 1. 在 Actions 里手动运行 `Build glibc 2.28 builder images`。
-2. 运行 `GCC Matrix Test`，先选 `single-x86-newlib` 或
+2. 修改 gitlink 后推送 `main` 或提交 PR，自动触发按 gitlink 构建的
+   `Source CI`。
+3. 运行 `GCC Matrix Test`，先选 `single-x86-newlib` 或
    `single-arm-newlib` 验证链路。
-3. 再选 `single-x86-glibc`、`single-arm-glibc`，最后选 `full`。
-4. 推送 `v0.1.0` 这类 tag，由正式的 `Release` workflow 构建并发布六个
-   glibc 2.28 GCC 包。
+4. 再选 `single-x86-glibc`、`single-arm-glibc`，最后选 `full`。
+5. 发版前把 `sources.lock` 更新到要发布的 commit，再推送 `v0.1.0` 这类
+   tag，由正式的 `Release` workflow 构建并发布六个 glibc 2.28 GCC 包。
 
 构建出来的宿主二进制只要求 glibc 2.28+；`newlib` 和 `musl` 目标本身不使用
 glibc。所有归档里的 `VERSIONS.txt` 会记录实际源码 commit，`SOURCES.lock`

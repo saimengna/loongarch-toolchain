@@ -162,10 +162,10 @@ jobs:
       - name: Generate cache key
         id: keygen
         run: |
-          source_key="$(printf '%s\n' '${{ inputs.mode }}' '${{ inputs.compiler }}' '${{ inputs.gdb }}' '${{ inputs.build-sim }}' '${{ inputs.use-prebuilt-gnu }}' | sha1sum | cut -d' ' -f1)"
+          source_key="$(printf '%s\n' '${{ inputs.mode }}' '${{ inputs.compiler }}' '${{ inputs.gdb }}' '${{ inputs.build-sim }}' '${{ inputs.use-prebuilt-gnu }}' '${{ inputs.fetch-locked }}' | sha1sum | cut -d' ' -f1)"
           lock_key="$(sha256sum sources.lock 2>/dev/null | cut -d' ' -f1 || true)"
           rev_key="$(git rev-parse HEAD 2>/dev/null || git submodule 2>/dev/null | sha1sum | cut -d' ' -f1)"
-          key="smcache-${{ github.run_id }}-${source_key}-${lock_key}-${rev_key}"
+          key="smcache-${source_key}-${lock_key}-${rev_key}"
           echo "key=$key" >> "$GITHUB_OUTPUT"
 
       - name: Restore cache
@@ -184,7 +184,7 @@ jobs:
           compilers='${{ inputs.compiler }}'
           locked=0
 
-          if [[ -n '${{ inputs.builder-image-repository }}' || '${{ inputs.fetch-locked }}' == true ]]; then
+          if [[ '${{ inputs.fetch-locked }}' == true ]]; then
             locked=1
             export FETCH_LOCKED=1
           fi
@@ -327,7 +327,7 @@ jobs:
         shell: bash
         run: |
           locked=0
-          if [[ -n '${{ inputs.builder-image-repository }}' || '${{ inputs.fetch-locked }}' == true ]]; then
+          if [[ '${{ inputs.fetch-locked }}' == true ]]; then
             locked=1
             export FETCH_LOCKED=1
           fi
@@ -383,7 +383,7 @@ jobs:
             -e LOGNAME=runner \
             -e GIT_TERMINAL_PROMPT=0 \
             -e BUILDER_IMAGE="$image" \
-            -e FETCH_LOCKED=1 \
+            -e FETCH_LOCKED='${{ inputs.fetch-locked }}' \
             -v "$GITHUB_WORKSPACE:$GITHUB_WORKSPACE" \
             -w "$GITHUB_WORKSPACE" \
             "$image" \
