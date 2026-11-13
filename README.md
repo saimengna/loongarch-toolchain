@@ -184,8 +184,8 @@ nightly/定时任务：
   验证，但不创建 Release。该 workflow 没有 `schedule`，不会每天定时运行。
 - `.github/workflows/release.yml`：正式发布链路。推送 `v*` tag 时在
   glibc 2.28 容器中按 `sources.lock` 构建六个 GCC 包：
-  x86_64/aarch64 × newlib/glibc/musl。发布包会上传 `SHA256SUMS`，并在发布前
-  重新解压并检查每个编译器。
+  x86_64/aarch64 × newlib/glibc/musl。发布前分别在 x86_64 和 aarch64
+  runner 上重新解压并检查对应架构的编译器，发布包会上传 `SHA256SUMS`。
 - `.github/workflows/build.yml`：仅供手动开发验证，保留 Ubuntu 22.04/24.04
   的普通宿主构建、LLVM 和 QEMU/testsuite 能力；不参与正式发布。
 - `.github/workflows/builder-image.yml`：仅手动触发，分别在

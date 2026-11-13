@@ -28,8 +28,67 @@ jobs:
       target-glibc-max: "2.36"
       fetch-locked: true
 
-  publish:
+  verify:
     needs: [build]
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-24.04
+            host_arch: x86_64
+          - runner: ubuntu-24.04-arm
+            host_arch: aarch64
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - name: Download ${{ matrix.host_arch }} artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: 'loongarch64-*-${{ matrix.host_arch }}-host-glibc228*'
+          path: artifacts
+          merge-multiple: true
+
+      - name: Check ${{ matrix.host_arch }} artifact count
+        shell: bash
+        run: |
+          set -euo pipefail
+          count="$(find artifacts -maxdepth 1 -type f -name '*.tar.xz' | wc -l)"
+          echo "release archive count for ${{ matrix.host_arch }}: $count"
+          test "$count" -eq 3
+
+      - name: Verify ${{ matrix.host_arch }} toolchains
+        shell: bash
+        run: |
+          set -euo pipefail
+          host_arch='${{ matrix.host_arch }}'
+          for mode in elf glibc musl; do
+            archive="$(find artifacts -maxdepth 1 -type f \
+              -name "loongarch64-${mode}-${host_arch}-host-glibc228*.tar.xz" \
+              -print -quit)"
+            test -n "$archive"
+            base="$(basename "$archive")"
+            case "$mode" in
+              elf)   triple=loongarch64-unknown-elf ;;
+              glibc) triple=loongarch64-unknown-linux-gnu ;;
+              musl)  triple=loongarch64-unknown-linux-musl ;;
+            esac
+
+            tmpdir="$(mktemp -d)"
+            mkdir -p "$tmpdir/root"
+            tar xJf "$archive" -C "$tmpdir/root"
+            prefix="$(find "$tmpdir/root" -mindepth 1 -maxdepth 1 -type d -print -quit)"
+            cc="$prefix/bin/${triple}-gcc"
+            test -x "$cc"
+            "$cc" --version >/dev/null
+            "$cc" -dumpmachine | grep -qx "$triple"
+            printf 'int main(void) { return 0; }\n' > "$tmpdir/smoke.c"
+            "$cc" -c "$tmpdir/smoke.c" -o "$tmpdir/smoke.o"
+            file "$tmpdir/smoke.o" | grep -qi loongarch
+            echo "verified: $base"
+            rm -rf "$tmpdir"
+          done
+
+  publish:
+    needs: [build, verify]
     runs-on: ubuntu-24.04
     steps:
       - name: Download artifacts
@@ -45,33 +104,6 @@ jobs:
           count="$(find artifacts -maxdepth 1 -type f -name '*.tar.xz' | wc -l)"
           echo "release archive count: $count"
           test "$count" -eq 6
-
-      - name: Verify packaged toolchains
-        shell: bash
-        run: |
-          set -euo pipefail
-          for archive in artifacts/*.tar.xz; do
-            base="$(basename "$archive")"
-            case "$base" in
-              loongarch64-elf-*)   triple=loongarch64-unknown-elf ;;
-              loongarch64-glibc-*) triple=loongarch64-unknown-linux-gnu ;;
-              loongarch64-musl-*)  triple=loongarch64-unknown-linux-musl ;;
-              *) echo "unexpected release archive: $base" >&2; exit 1 ;;
-            esac
-
-            tmpdir="$(mktemp -d)"
-            mkdir -p "$tmpdir/root"
-            tar xJf "$archive" -C "$tmpdir/root"
-            prefix="$(find "$tmpdir/root" -mindepth 1 -maxdepth 1 -type d -print -quit)"
-            cc="$prefix/bin/${triple}-gcc"
-            test -x "$cc"
-            "$cc" --version >/dev/null
-            "$cc" -dumpmachine | grep -qx "$triple"
-            printf 'int main(void) { return 0; }\n' > "$tmpdir/smoke.c"
-            "$cc" -c "$tmpdir/smoke.c" -o "$tmpdir/smoke.o"
-            file "$tmpdir/smoke.o" | grep -qi loongarch
-            rm -rf "$tmpdir"
-          done
 
       - name: Generate release checksums
         shell: bash
