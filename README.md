@@ -185,7 +185,8 @@ nightly/定时任务：
 - `.github/workflows/release.yml`：正式发布链路。推送 `v*` tag 时在
   glibc 2.28 容器中按 `sources.lock` 构建六个 GCC 包：
   x86_64/aarch64 × newlib/glibc/musl。发布前分别在 x86_64 和 aarch64
-  runner 上重新解压并检查对应架构的编译器，发布包会上传 `SHA256SUMS`。
+  runner 上重新解压并检查对应架构的编译器；每个包都包含许可证和源码信息，
+  Release 页面也会附带 `LICENSE`、`THIRD_PARTY_NOTICES.md` 和 `SHA256SUMS`。
 - `.github/workflows/build.yml`：仅供手动开发验证，保留 Ubuntu 22.04/24.04
   的普通宿主构建、LLVM 和 QEMU/testsuite 能力；不参与正式发布。
 - `.github/workflows/builder-image.yml`：仅手动触发，分别在
@@ -210,10 +211,10 @@ commit；源码缓存 key 也包含锁文件哈希。构建在 `manylinux_2_28` 
    tag，由正式的 `Release` workflow 构建并发布六个 glibc 2.28 GCC 包。
 
 构建出来的宿主二进制只要求 glibc 2.28+；`newlib` 和 `musl` 目标本身不使用
-glibc。所有归档里的 `VERSIONS.txt` 会记录实际源码 commit，`SOURCES.lock`
-记录本次构建的锁文件，`BUILD-INFO.txt` 记录宿主架构、glibc 上限和目标库。
-正式 Release 还会提供 `SHA256SUMS`，下载后可在同一目录执行
-`sha256sum -c SHA256SUMS`。
+glibc。所有归档都包含 `LICENSE`、`THIRD_PARTY_NOTICES.md`、`VERSIONS.txt`
+和 `SOURCES.lock`，其中后两者记录实际源码 commit；`BUILD-INFO.txt` 记录
+宿主架构、glibc 上限和目标库。正式 Release 还会提供 `SHA256SUMS`，下载后
+可在同一目录执行 `sha256sum -c SHA256SUMS`。
 
 第三方组件的许可证和版权说明见 `THIRD_PARTY_NOTICES.md`。
 

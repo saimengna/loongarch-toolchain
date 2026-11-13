@@ -6,6 +6,8 @@ licensed under the GNU General Public License, version 3. See `LICENSE`.
 It also contains or consumes third-party material. The license and copyright
 notices in the original files and upstream repositories control those files.
 This document is a summary, not a replacement for those notices.
+It is copied into each packaged toolchain together with `LICENSE` and the
+corresponding `SOURCES.lock`.
 
 ## Linux UAPI headers
 

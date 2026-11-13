@@ -78,6 +78,9 @@ jobs:
             prefix="$(find "$tmpdir/root" -mindepth 1 -maxdepth 1 -type d -print -quit)"
             cc="$prefix/bin/${triple}-gcc"
             test -x "$cc"
+            test -f "$prefix/LICENSE"
+            test -f "$prefix/THIRD_PARTY_NOTICES.md"
+            test -f "$prefix/SOURCES.lock"
             "$cc" --version >/dev/null
             "$cc" -dumpmachine | grep -qx "$triple"
             printf 'int main(void) { return 0; }\n' > "$tmpdir/smoke.c"
@@ -91,6 +94,9 @@ jobs:
     needs: [build, verify]
     runs-on: ubuntu-24.04
     steps:
+      - name: Checkout license notices
+        uses: actions/checkout@v4
+
       - name: Download artifacts
         uses: actions/download-artifact@v4
         with:
@@ -131,10 +137,14 @@ jobs:
             - glibc target runtime: glibc 2.36
             - Components: binutils + GCC + target C library
             - GDB, LLVM, QEMU, and testsuite runs are not included
+            - License and third-party notices are included in every archive
+              and attached to this release
             - Source revisions: locked by `sources.lock` at
               `${{ github.server_url }}/${{ github.repository }}/blob/${{ github.sha }}/sources.lock`
             - Verify downloads with `sha256sum -c SHA256SUMS`
           files: |
+            LICENSE
+            THIRD_PARTY_NOTICES.md
             artifacts/*.tar.xz
             artifacts/SHA256SUMS
           fail_on_unmatched_files: true

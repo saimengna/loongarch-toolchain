@@ -35,6 +35,7 @@ done
 
 [[ -n "$PREFIX" ]] || { usage; exit 1; }
 [[ -d "$PREFIX" ]] || { echo "安装目录不存在: $PREFIX" >&2; exit 1; }
+REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 
 case "$MODE" in
   newlib) LABEL="elf" ;;
@@ -85,6 +86,12 @@ if [[ "$STRIP" == 1 ]]; then
   export host_strip cross_strip
   find "$PREFIX" -type f -exec bash -c 'strip_one "$1"' _ {} \;
 fi
+
+# Legal notices and source revision information must travel with the binaries.
+for notice in LICENSE THIRD_PARTY_NOTICES.md; do
+  [[ -f "$REPO_ROOT/$notice" ]] && cp "$REPO_ROOT/$notice" "$PREFIX/$notice"
+done
+[[ -f "$REPO_ROOT/sources.lock" ]] && cp "$REPO_ROOT/sources.lock" "$PREFIX/SOURCES.lock"
 
 if [[ -x "$(dirname "$0")/../.github/dedup-dir.sh" ]]; then
   "$(dirname "$0")/../.github/dedup-dir.sh" "$PREFIX" || true
