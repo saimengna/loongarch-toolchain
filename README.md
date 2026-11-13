@@ -24,7 +24,7 @@ musl、qemu 和 llvm 从各自的上游仓库获取，不在本仓库重复存�
 首次克隆：
 
 ```bash
-git clone git@github.com:YOU/loongarch-toolchain.git
+git clone git@github.com:saimengna/loongarch-toolchain.git
 cd loongarch-toolchain
 ```
 
@@ -214,6 +214,8 @@ glibc。所有归档里的 `VERSIONS.txt` 会记录实际源码 commit，`SOURCE
 记录本次构建的锁文件，`BUILD-INFO.txt` 记录宿主架构、glibc 上限和目标库。
 正式 Release 还会提供 `SHA256SUMS`，下载后可在同一目录执行
 `sha256sum -c SHA256SUMS`。
+
+第三方组件的许可证和版权说明见 `THIRD_PARTY_NOTICES.md`。
 
 产物命名格式：
 
