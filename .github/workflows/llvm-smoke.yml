@@ -1,0 +1,56 @@
+name: LLVM Smoke
+
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: "Target C library for the smoke build"
+        type: choice
+        options:
+          - newlib
+          - linux
+          - musl
+        default: newlib
+
+permissions:
+  contents: read
+  packages: read
+
+jobs:
+  build-gcc:
+    uses: ./.github/workflows/build-reusable.yaml
+    with:
+      artifact-name: smoke
+      os: '["ubuntu-24.04"]'
+      mode: '["${{ inputs.mode }}"]'
+      target: '["loongarch64-lp64d"]'
+      compiler: '["gcc"]'
+      strip: unstripped
+      report: false
+      gdb: false
+      build-sim: false
+      builder-image-repository: ghcr.io/${{ github.repository_owner }}/loongarch-builder
+      builder-image-tag: glibc228
+      host-glibc-max: "2.28"
+      target-glibc-max: "2.36"
+      fetch-locked: false
+
+  build-llvm:
+    needs: [build-gcc]
+    uses: ./.github/workflows/build-reusable.yaml
+    with:
+      artifact-name: smoke
+      os: '["ubuntu-24.04"]'
+      mode: '["${{ inputs.mode }}"]'
+      target: '["loongarch64-lp64d"]'
+      compiler: '["llvm"]'
+      strip: unstripped
+      report: false
+      gdb: false
+      build-sim: false
+      use-prebuilt-gnu: true
+      builder-image-repository: ghcr.io/${{ github.repository_owner }}/loongarch-builder
+      builder-image-tag: glibc228
+      host-glibc-max: "2.28"
+      target-glibc-max: "2.36"
+      fetch-locked: false
