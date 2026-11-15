@@ -56,5 +56,10 @@ jobs:
           echo "$actual"
           echo "$actual" | grep -Eq '2\.28([^0-9]|$)'
 
+      - name: Verify LLVM build prerequisites
+        run: |
+          set -euo pipefail
+          docker run --rm "$IMAGE" sh -c 'cmake --version | head -n 1'
+
       - name: Push builder image
         run: docker push "$IMAGE"

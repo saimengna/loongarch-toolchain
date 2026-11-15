@@ -179,21 +179,30 @@ GitHub Actions 使用与本地相同的 `configure` 和 `make` 流程，但没�
 nightly/定时任务：
 
 - `.github/workflows/source-ci.yml`：推送或提 PR 到 `main`，且修改了
-  `gcc`、`binutils`、`glibc`、`newlib`、`musl` 等 gitlink、`.gitmodules`
-  或源码拉取脚本时自动触发。它按 gitlink 的源码 commit 构建六个 GCC 包用于
-  验证，但不创建 Release。该 workflow 没有 `schedule`，不会每天定时运行。
+  `gcc`、`binutils`、`glibc`、`newlib`、`musl`、`llvm` 等 gitlink、
+  `.gitmodules` 或源码拉取脚本时自动触发。它按 gitlink 的源码 commit
+  构建六个 GCC 包和六个 GCC+LLVM 包用于验证，但不创建 Release。该 workflow
+  没有 `schedule`，不会每天定时运行。
 - `.github/workflows/release.yml`：正式发布链路。推送 `v*` tag 时在
-  glibc 2.28 容器中按 `sources.lock` 构建六个 GCC 包：
-  x86_64/aarch64 × newlib/glibc/musl。发布前分别在 x86_64 和 aarch64
-  runner 上重新解压并检查对应架构的编译器；每个包都包含许可证和源码信息，
-  Release 页面也会附带 `LICENSE`、`THIRD_PARTY_NOTICES.md` 和 `SHA256SUMS`。
+  glibc 2.28 容器中按 `sources.lock` 构建六个 GCC 包和六个 GCC+LLVM 包：
+  x86_64/aarch64 × newlib/glibc/musl。LLVM 使用独立的 `build-llvm` job，
+  复用同一矩阵的 GCC 包，只补编译 LLVM。发布前分别在 x86_64 和 aarch64
+  runner 上重新解压并检查对应架构的 GCC 和 Clang；每个包都包含许可证和源码
+  信息，Release 页面也会附带 `LICENSE`、`THIRD_PARTY_NOTICES.md` 和
+  `SHA256SUMS`。
 - `.github/workflows/build.yml`：仅供手动开发验证，保留 Ubuntu 22.04/24.04
   的普通宿主构建、LLVM 和 QEMU/testsuite 能力；不参与正式发布。
+- `.github/workflows/llvm-smoke.yml`：手动运行的单行矩阵 LLVM 验证。它只在
+  `ubuntu-24.04` 上构建一个 C 库模式，适合在私有库额度有限时先验证
+  “GCC 产物复用 + LLVM 补构建”链路；不创建 Release。
 - `.github/workflows/builder-image.yml`：仅手动触发，分别在
   `ubuntu-24.04` 和 `ubuntu-24.04-arm` 上构建
   `ghcr.io/OWNER/loongarch-builder:glibc228-amd64` 与
   `ghcr.io/OWNER/loongarch-builder:glibc228-arm64`。镜像基于
-  `manylinux_2_28`，所以编出来的宿主编译器只要求 glibc 2.28+。
+  `manylinux_2_28`，所以编出来的宿主编译器只要求 glibc 2.28+。LLVM 构建
+  需要镜像内的 `cmake`；修改 `.github/containers/glibc228/Dockerfile` 后，
+  必须重新运行该 workflow 并覆盖同名 `glibc228` 标签，否则 LLVM job 仍会
+  使用旧镜像。
 
 正式发布矩阵会自动设置 `FETCH_LOCKED=1`，从 `sources.lock` 读取固定
 commit；源码缓存 key 也包含锁文件哈希。构建在 `manylinux_2_28` 容器内完成，
@@ -206,9 +215,11 @@ commit；源码缓存 key 也包含锁文件哈希。构建在 `manylinux_2_28` 
 1. 在 Actions 里手动运行 `Build glibc 2.28 builder images`。
 2. 修改 gitlink 后推送 `main` 或提交 PR，自动触发按 gitlink 构建的
    `Source CI`。
-3. 如需手动验证普通宿主构建、LLVM 或 QEMU/testsuite，运行 `Build`。
+3. 如需手动验证普通宿主构建、LLVM 或 QEMU/testsuite，运行 `Build`；
+   私有库额度有限时先运行 `LLVM Smoke` 的 `newlib`，再运行 `linux`。
 4. 发版前把 `sources.lock` 更新到要发布的 commit，再推送 `v0.1.0` 这类
-   tag，由正式的 `Release` workflow 构建并发布六个 glibc 2.28 GCC 包。
+   tag，由正式的 `Release` workflow 构建并发布六个 glibc 2.28 GCC 包和
+   六个 GCC+LLVM 包。
 
 构建出来的宿主二进制只要求 glibc 2.28+；`newlib` 和 `musl` 目标本身不使用
 glibc。所有归档都包含 `LICENSE`、`THIRD_PARTY_NOTICES.md`、`VERSIONS.txt`
@@ -221,7 +232,7 @@ glibc。所有归档都包含 `LICENSE`、`THIRD_PARTY_NOTICES.md`、`VERSIONS.t
 产物命名格式：
 
 ```text
-loongarch64-{elf|glibc|musl}-{x86_64|aarch64}-host-glibc228[-target-glibc236][-release].tar.xz
+loongarch64-{elf|glibc|musl}-{x86_64|aarch64}-host-glibc228[-target-glibc236][-llvm][-release].tar.xz
 ```
 
 ## 注意
@@ -234,7 +245,8 @@ loongarch64-{elf|glibc|musl}-{x86_64|aarch64}-host-glibc228[-target-glibc236][-r
 - `--enable-llvm` 会显著增加构建时间和磁盘占用；时间紧张时先只构建 GCC。
 - LLVM 需要 Python ≥3.8；系统 `python3` 太旧时用
   `make LLVM_PYTHON=/path/to/python3 QEMU_PYTHON=/path/to/python3`。
-- 当前正式 Release 只构建 GCC，不包含 GDB、LLVM、QEMU 和 testsuite；
-  Ubuntu 22.04/24.04 的普通构建仅用于手动验证。`x86_64` 和 `aarch64`
-  产物不能混用。
+- 当前正式 Release 包含 GCC 和 GCC+LLVM 两种包，不包含 GDB、QEMU 和
+  testsuite；LLVM 包在同一前缀中保留 GCC、binutils 和目标 C 库，并增加
+  clang/clang++/lld 及 LLVM runtimes。Ubuntu 22.04/24.04 的普通构建仅用于
+  手动验证。`x86_64` 和 `aarch64` 产物不能混用。
 - 子模块提交和 CI 发布流程还需要在第一次真实推送后做一次端到端验证。

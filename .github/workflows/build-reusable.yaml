@@ -139,12 +139,16 @@ jobs:
         run: |
           set -euo pipefail
           compilers="$(echo '${{ inputs.compiler }}' | tr -d '[]\" ')"
-          if [[ "$compilers" != "gcc" ]]; then
-            echo "builder-image path currently supports GCC only"
+          if [[ "$compilers" != "gcc" && "$compilers" != "llvm" ]]; then
+            echo "builder-image path supports gcc or llvm only"
             exit 1
           fi
-          if [[ '${{ inputs.gdb }}' == true || '${{ inputs.build-sim }}' == true || '${{ inputs.report }}' == true || '${{ inputs.use-prebuilt-gnu }}' == true ]]; then
-            echo "builder-image path does not support GDB, QEMU, reports, or prebuilt GNU"
+          if [[ "$compilers" == "llvm" && '${{ inputs.use-prebuilt-gnu }}' != true ]]; then
+            echo "builder-image LLVM builds require use-prebuilt-gnu"
+            exit 1
+          fi
+          if [[ '${{ inputs.gdb }}' == true || '${{ inputs.build-sim }}' == true || '${{ inputs.report }}' == true ]]; then
+            echo "builder-image path does not support GDB, QEMU, or reports"
             exit 1
           fi
 
@@ -255,19 +259,22 @@ jobs:
           esac
           if [[ -n '${{ inputs.builder-image-repository }}' ]]; then
             if [[ "$label" == glibc ]]; then
-              base="loongarch64-${label}-${host_arch}-host-glibc${host_tag}-target-glibc${target_tag}"
+              gnu_base="loongarch64-${label}-${host_arch}-host-glibc${host_tag}-target-glibc${target_tag}"
             else
-              base="loongarch64-${label}-${host_arch}-host-glibc${host_tag}"
+              gnu_base="loongarch64-${label}-${host_arch}-host-glibc${host_tag}"
             fi
+            base="$gnu_base"
+            [[ '${{ matrix.compiler }}' == llvm ]] && base="${base}-llvm"
             repo='${{ inputs.builder-image-repository }}'
             image="${repo,,}:${{ inputs.builder-image-tag }}-${image_arch}"
           else
+            gnu_base="loongarch64-${label}-${{ matrix.os }}-gcc"
             base="loongarch64-${label}-${{ matrix.os }}-${{ matrix.compiler }}"
             image=""
           fi
           echo "unstripped=${base}${suffix}" >> "$GITHUB_OUTPUT"
           echo "stripped=${base}-stripped${suffix}" >> "$GITHUB_OUTPUT"
-          echo "gnu=loongarch64-${label}-${{ matrix.os }}-gcc${suffix}" >> "$GITHUB_OUTPUT"
+          echo "gnu=${gnu_base}${suffix}" >> "$GITHUB_OUTPUT"
           echo "builder-image=$image" >> "$GITHUB_OUTPUT"
           echo "host-arch=$host_arch" >> "$GITHUB_OUTPUT"
 
@@ -352,6 +359,27 @@ jobs:
             fi
           done
 
+      - name: Download prebuilt GNU toolchain
+        if: ${{ inputs.use-prebuilt-gnu }}
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ steps.names.outputs.gnu }}
+          path: prebuilt-gnu
+
+      - name: Extract prebuilt GNU toolchain for container
+        if: ${{ inputs.use-prebuilt-gnu && inputs.builder-image-repository != '' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf prebuilt-root install-toolchain
+          mkdir -p prebuilt-root
+          tar xJf "prebuilt-gnu/${{ steps.names.outputs.gnu }}.tar.xz" -C prebuilt-root
+          top="$(find prebuilt-root -mindepth 1 -maxdepth 1 -type d -print -quit)"
+          test -n "$top"
+          mv "$top" install-toolchain
+          rm -rf prebuilt-root prebuilt-gnu
+          ls install-toolchain/bin/*-gcc >/dev/null
+
       - name: Log in to GHCR
         if: ${{ inputs.builder-image-repository != '' }}
         env:
@@ -384,6 +412,8 @@ jobs:
             -e GIT_TERMINAL_PROMPT=0 \
             -e BUILDER_IMAGE="$image" \
             -e FETCH_LOCKED='${{ inputs.fetch-locked }}' \
+            -e CI_COMPILER='${{ matrix.compiler }}' \
+            -e CI_PREBUILT_GNU='${{ inputs.use-prebuilt-gnu }}' \
             -v "$GITHUB_WORKSPACE:$GITHUB_WORKSPACE" \
             -w "$GITHUB_WORKSPACE" \
             "$image" \
@@ -397,13 +427,6 @@ jobs:
               --strip-mode '${{ inputs.strip }}' \
               --host-glibc-max '${{ inputs.host-glibc-max }}' \
               --target-glibc-max '${{ inputs.target-glibc-max }}'"
-
-      - name: Download prebuilt GNU toolchain
-        if: ${{ inputs.use-prebuilt-gnu }}
-        uses: actions/download-artifact@v4
-        with:
-          name: ${{ steps.names.outputs.gnu }}
-          path: prebuilt-gnu
 
       - name: Configure
         if: ${{ inputs.builder-image-repository == '' }}
@@ -424,7 +447,7 @@ jobs:
           sudo chown -R "$USER" /mnt/loongarch
 
       - name: Restore prebuilt GNU toolchain
-        if: ${{ inputs.use-prebuilt-gnu }}
+        if: ${{ inputs.use-prebuilt-gnu && inputs.builder-image-repository == '' }}
         shell: bash
         run: |
           tar xJf "prebuilt-gnu/${{ steps.names.outputs.gnu }}.tar.xz" -C /mnt/

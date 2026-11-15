@@ -14,6 +14,7 @@ RUN dnf -y install \
         binutils \
         bison \
         bzip2 \
+        cmake \
         diffutils \
         expat-devel \
         file \

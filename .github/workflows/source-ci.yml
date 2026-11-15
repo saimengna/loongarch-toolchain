@@ -11,10 +11,13 @@ on:
       - 'glibc'
       - 'newlib'
       - 'musl'
+      - 'llvm'
       - '.gitmodules'
       - 'Makefile.in'
       - 'scripts/fetch-sources.sh'
+      - 'scripts/ci-build-in-container.sh'
       - '.github/workflows/source-ci.yml'
+      - '.github/workflows/build-reusable.yaml'
   pull_request:
     branches:
       - main
@@ -24,10 +27,13 @@ on:
       - 'glibc'
       - 'newlib'
       - 'musl'
+      - 'llvm'
       - '.gitmodules'
       - 'Makefile.in'
       - 'scripts/fetch-sources.sh'
+      - 'scripts/ci-build-in-container.sh'
       - '.github/workflows/source-ci.yml'
+      - '.github/workflows/build-reusable.yaml'
 
 permissions:
   contents: read
@@ -50,6 +56,30 @@ jobs:
       report: false
       gdb: false
       build-sim: false
+      builder-image-repository: ghcr.io/${{ github.repository_owner }}/loongarch-builder
+      builder-image-tag: glibc228
+      host-glibc-max: "2.28"
+      target-glibc-max: "2.36"
+      fetch-locked: false
+
+  # LLVM is built in a separate job so it has its own 6-hour job budget.  It
+  # restores the matching GCC artifact instead of rebuilding the GNU
+  # toolchain.  The matrix is expanded again per OS/mode, just like the GCC
+  # job above.
+  build-llvm:
+    needs: [build]
+    uses: ./.github/workflows/build-reusable.yaml
+    with:
+      artifact-name: ci
+      os: '["ubuntu-24.04","ubuntu-24.04-arm"]'
+      mode: '["newlib","linux","musl"]'
+      target: '["loongarch64-lp64d"]'
+      compiler: '["llvm"]'
+      strip: unstripped
+      report: false
+      gdb: false
+      build-sim: false
+      use-prebuilt-gnu: true
       builder-image-repository: ghcr.io/${{ github.repository_owner }}/loongarch-builder
       builder-image-tag: glibc228
       host-glibc-max: "2.28"
