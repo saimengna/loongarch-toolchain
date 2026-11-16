@@ -6,6 +6,15 @@ PREFIX=""
 MODE=""
 HOST_GLIBC_MAX="2.28"
 TARGET_GLIBC_MAX="2.36"
+TARGET_ABI_TMPDIR=""
+
+cleanup_target_abi_tmpdir() {
+  if [[ -n "${TARGET_ABI_TMPDIR:-}" ]]; then
+    rm -rf "$TARGET_ABI_TMPDIR"
+  fi
+}
+
+trap cleanup_target_abi_tmpdir EXIT
 
 usage() {
   cat <<'EOT'
@@ -72,7 +81,7 @@ check_target_linux() {
   [[ -x "$target_readelf" ]] || { echo "缺少目标 readelf: $target_readelf" >&2; exit 1; }
 
   tmpdir="$(mktemp -d)"
-  trap 'rm -rf "$tmpdir"' EXIT
+  TARGET_ABI_TMPDIR="$tmpdir"
   printf 'int main(void) { return 0; }\n' > "$tmpdir/abi.c"
   "$cc" "$tmpdir/abi.c" -o "$tmpdir/abi"
 
