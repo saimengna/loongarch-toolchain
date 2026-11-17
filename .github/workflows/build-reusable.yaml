@@ -67,11 +67,6 @@ on:
         description: "Highest target glibc symbol version allowed"
         type: string
         default: "2.36"
-      fetch-locked:
-        description: "Fetch the exact revisions from sources.lock"
-        type: boolean
-        default: false
-
 env:
   CCACHE_BASEDIR: ${{ github.workspace }}
   CCACHE_COMPILERCHECK: content
@@ -166,10 +161,9 @@ jobs:
       - name: Generate cache key
         id: keygen
         run: |
-          source_key="$(printf '%s\n' '${{ inputs.mode }}' '${{ inputs.compiler }}' '${{ inputs.gdb }}' '${{ inputs.build-sim }}' '${{ inputs.use-prebuilt-gnu }}' '${{ inputs.fetch-locked }}' | sha1sum | cut -d' ' -f1)"
-          lock_key="$(sha256sum sources.lock 2>/dev/null | cut -d' ' -f1 || true)"
+          source_key="$(printf '%s\n' '${{ inputs.mode }}' '${{ inputs.compiler }}' '${{ inputs.gdb }}' '${{ inputs.build-sim }}' '${{ inputs.use-prebuilt-gnu }}' | sha1sum | cut -d' ' -f1)"
           rev_key="$(git rev-parse HEAD 2>/dev/null || git submodule 2>/dev/null | sha1sum | cut -d' ' -f1)"
-          key="smcache-${source_key}-${lock_key}-${rev_key}"
+          key="smcache-${source_key}-${rev_key}"
           echo "key=$key" >> "$GITHUB_OUTPUT"
 
       - name: Restore cache
@@ -186,12 +180,6 @@ jobs:
           set -euo pipefail
           modes='${{ inputs.mode }}'
           compilers='${{ inputs.compiler }}'
-          locked=0
-
-          if [[ '${{ inputs.fetch-locked }}' == true ]]; then
-            locked=1
-            export FETCH_LOCKED=1
-          fi
 
           if [[ '${{ inputs.use-prebuilt-gnu }}' == true ]]; then
             components=(binutils llvm)
@@ -206,9 +194,7 @@ jobs:
           if [[ '${{ inputs.build-sim }}' == true ]]; then components+=(qemu); fi
 
           for component in "${components[@]}"; do
-            if [[ "$locked" == 1 ]]; then
-              bash scripts/fetch-sources.sh "$component"
-            elif [[ ! -d "$component" || -z "$(ls -A "$component" 2>/dev/null | grep -v '^\.git$')" ]]; then
+            if [[ ! -d "$component" || -z "$(ls -A "$component" 2>/dev/null | grep -v '^\.git$')" ]]; then
               bash scripts/fetch-sources.sh "$component"
             fi
           done
@@ -333,11 +319,6 @@ jobs:
       - name: Ensure required sources
         shell: bash
         run: |
-          locked=0
-          if [[ '${{ inputs.fetch-locked }}' == true ]]; then
-            locked=1
-            export FETCH_LOCKED=1
-          fi
           case '${{ matrix.mode }}' in
             linux) libc=glibc ;;
             musl) libc=musl ;;
@@ -352,9 +333,7 @@ jobs:
           fi
           [[ '${{ matrix.build-sim }}' == true ]] && components+=(qemu)
           for component in "${components[@]}"; do
-            if [[ "$locked" == 1 ]]; then
-              bash scripts/fetch-sources.sh "$component"
-            elif [[ ! -d "$component" || -z "$(ls -A "$component" 2>/dev/null | grep -v '^\.git$')" ]]; then
+            if [[ ! -d "$component" || -z "$(ls -A "$component" 2>/dev/null | grep -v '^\.git$')" ]]; then
               bash scripts/fetch-sources.sh "$component"
             fi
           done
@@ -411,7 +390,6 @@ jobs:
             -e LOGNAME=runner \
             -e GIT_TERMINAL_PROMPT=0 \
             -e BUILDER_IMAGE="$image" \
-            -e FETCH_LOCKED='${{ inputs.fetch-locked }}' \
             -e CI_COMPILER='${{ matrix.compiler }}' \
             -e CI_PREBUILT_GNU='${{ inputs.use-prebuilt-gnu }}' \
             -v "$GITHUB_WORKSPACE:$GITHUB_WORKSPACE" \

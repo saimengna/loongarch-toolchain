@@ -1,0 +1,154 @@
+name: Nightly Release
+
+on:
+  # GitHub Actions cron uses UTC. 00:00 UTC is 08:00 in Asia/Shanghai.
+  schedule:
+    - cron: '0 0 * * *'
+  # Manual runs bypass the 24-hour activity check so the workflow can be tested.
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  packages: read
+
+concurrency:
+  group: nightly-release
+  cancel-in-progress: false
+
+jobs:
+  activity-check:
+    runs-on: ubuntu-latest
+    outputs:
+      skip: ${{ steps.check.outputs.skip }}
+      datestamp: ${{ steps.check.outputs.datestamp }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check repository activity
+        id: check
+        shell: bash
+        run: |
+          set -euo pipefail
+          datestamp="$(date -u '+%Y.%m.%d')"
+          echo "datestamp=$datestamp" >> "$GITHUB_OUTPUT"
+
+          if [[ "$GITHUB_EVENT_NAME" == "workflow_dispatch" ]]; then
+            echo "Manual run: bypassing the 24-hour activity check"
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          commit_date="$(git log -1 --format=%cI)"
+          commit_epoch="$(date -d "$commit_date" +%s)"
+          now_epoch="$(date -u +%s)"
+          age_seconds=$((now_epoch - commit_epoch))
+          echo "Latest commit: $commit_date (${age_seconds}s ago)"
+
+          if ((age_seconds > 86400)); then
+            echo "No commit in the last 24 hours; skipping nightly release"
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "Repository is recent; starting nightly release"
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+          fi
+
+  build:
+    needs: [activity-check]
+    if: needs.activity-check.outputs.skip != 'true'
+    uses: ./.github/workflows/build-reusable.yaml
+    with:
+      artifact-name: nightly
+      os: '["ubuntu-24.04","ubuntu-24.04-arm"]'
+      mode: '["newlib","linux","musl"]'
+      target: '["loongarch64-lp64d"]'
+      compiler: '["gcc"]'
+      strip: unstripped
+      report: false
+      gdb: false
+      build-sim: false
+      builder-image-repository: ghcr.io/${{ github.repository_owner }}/loongarch-builder
+      builder-image-tag: glibc228
+      host-glibc-max: "2.28"
+      target-glibc-max: "2.36"
+
+  build-llvm:
+    needs: [activity-check, build]
+    if: needs.activity-check.outputs.skip != 'true'
+    uses: ./.github/workflows/build-reusable.yaml
+    with:
+      artifact-name: nightly
+      os: '["ubuntu-24.04","ubuntu-24.04-arm"]'
+      mode: '["newlib","linux","musl"]'
+      target: '["loongarch64-lp64d"]'
+      compiler: '["llvm"]'
+      strip: unstripped
+      report: false
+      gdb: false
+      build-sim: false
+      use-prebuilt-gnu: true
+      builder-image-repository: ghcr.io/${{ github.repository_owner }}/loongarch-builder
+      builder-image-tag: glibc228
+      host-glibc-max: "2.28"
+      target-glibc-max: "2.36"
+
+  publish:
+    needs: [activity-check, build, build-llvm]
+    if: needs.activity-check.outputs.skip != 'true'
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout license notices
+        uses: actions/checkout@v4
+
+      - name: Download artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          merge-multiple: true
+
+      - name: Check artifact count
+        shell: bash
+        run: |
+          set -euo pipefail
+          count="$(find artifacts -maxdepth 1 -type f -name '*.tar.xz' | wc -l)"
+          echo "nightly archive count: $count"
+          test "$count" -eq 12
+
+      - name: Generate release checksums
+        shell: bash
+        run: |
+          set -euo pipefail
+          (
+            cd artifacts
+            LC_ALL=C sha256sum *.tar.xz > SHA256SUMS
+          )
+          test "$(wc -l < artifacts/SHA256SUMS)" -eq 12
+          cat artifacts/SHA256SUMS
+
+      - name: Create nightly release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: nightly-${{ needs.activity-check.outputs.datestamp }}
+          target_commitish: ${{ github.sha }}
+          name: "LoongArch nightly ${{ needs.activity-check.outputs.datestamp }}"
+          body: |
+            Automated nightly LoongArch GCC and GCC+LLVM toolchains.
+
+            - Host glibc requirement: 2.28 or newer
+            - Target: `loongarch64-lp64d`
+            - glibc target runtime: glibc 2.36
+            - Twelve archives: x86_64 and aarch64 hosts, each with
+              newlib, glibc, and musl targets, in GCC-only and GCC+LLVM variants
+            - Built fresh in this nightly workflow run; Source CI artifacts are
+              not reused
+            - Source revisions are recorded in `VERSIONS.txt` in every archive
+              and fixed by the submodule gitlinks at commit `${{ github.sha }}`
+            - This is a prerelease, not the stable `v*` release
+            - Verify downloads with `sha256sum -c SHA256SUMS`
+          files: |
+            LICENSE
+            THIRD_PARTY_NOTICES.md
+            artifacts/*.tar.xz
+            artifacts/SHA256SUMS
+          draft: false
+          prerelease: true
+          fail_on_unmatched_files: true

@@ -186,7 +186,6 @@ file /tmp/loongarch-smoke.o | grep -qi loongarch
 
 make versions
 cp versions.txt "$PREFIX/VERSIONS.txt"
-[[ -f sources.lock ]] && cp sources.lock "$PREFIX/SOURCES.lock"
 cat > "$PREFIX/BUILD-INFO.txt" <<EOF
 host_arch=$(uname -m)
 host_glibc=$(ldd --version | head -n 1 | awk '{print $NF}')
@@ -198,7 +197,6 @@ target_glibc_version=${glibc_version:-none}
 target_glibc_max=$TARGET_GLIBC_MAX
 compiler=$COMPILER
 builder_image=${BUILDER_IMAGE:-unknown}
-source_lock=SOURCES.lock
 EOF
 
 bash scripts/check-toolchain-abi.sh \

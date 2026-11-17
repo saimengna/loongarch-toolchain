@@ -8,16 +8,11 @@
 #   scripts/fetch-sources.sh -f             强制重新拉取（会先删除对应目录！）
 #   scripts/fetch-sources.sh -n             只演示，不真的拉取
 #
-# 固定版本模式:
-#   FETCH_LOCKED=1 scripts/fetch-sources.sh gcc
-#   SOURCE_LOCK=/path/to/sources.lock FETCH_LOCKED=1 ...
-#
 # 行为:
-#   1) 普通模式：gitlink 目录按主仓库记录的 commit 初始化；其他已有源码跳过；
-#      拉取失败时再尝试镜像。
-#   2) 锁定模式：从 sources.lock 读取 commit，已经存在则校验 HEAD，不一致则
-#      从当前组件的镜像列表拉取该 commit；不会使用 --remote。
-#   3) 结束后打印每个项目的状态；有失败则退出码非 0
+#   1) gitlink 目录按主仓库记录的 commit 初始化/更新。
+#   2) 非 gitlink 的已有源码默认不覆盖。
+#   3) 空目录先尝试子模块，失败后按镜像表依次尝试备用源。
+#   4) 结束后打印每个项目的状态；有失败则退出码非 0
 #      （可用 FETCH_STRICT=0 关掉）。
 #
 
@@ -33,7 +28,7 @@ for arg in "$@"; do
     case "$arg" in
         -f|--force)   force=1 ;;
         -n|--dry-run) dry=1 ;;
-        -h|--help)    sed -n '2,23p' "$0"; exit 0 ;;
+        -h|--help)    sed -n '2,/^$/p' "$0"; exit 0 ;;
         -*) echo "未知参数: $arg" >&2; exit 2 ;;
         *)  only="$arg" ;;
     esac
@@ -41,15 +36,6 @@ done
 
 use_submodule="${FETCH_USE_SUBMODULE:-1}"
 strict="${FETCH_STRICT:-1}"
-lock_file="${SOURCE_LOCK:-$srcdir/sources.lock}"
-locked="${FETCH_LOCKED:-0}"
-
-is_locked() {
-    case "$locked" in
-        1|true|yes|TRUE|YES) return 0 ;;
-        *) return 1 ;;
-    esac
-}
 
 # ---------------------------------------------------------------------------
 # 源码表:  名字 | 目录 | 分支 | 备用 URL(空格分隔，按顺序尝试)
@@ -78,19 +64,10 @@ if ! command -v git >/dev/null 2>&1; then
     exit 127
 fi
 
-if is_locked && [ ! -f "$lock_file" ]; then
-    echo "错误: 锁定模式需要 $lock_file" >&2
-    exit 2
-fi
-
 names=(); states=(); details=()
 
 has_sources() {   # $1 = 目录    除 .git 外还有内容?
     [ -d "$1" ] && [ -n "$(ls -A "$1" 2>/dev/null | grep -vx '\.git')" ]
-}
-
-has_git() {       # $1 = 目录
-    [ -d "$1/.git" ] || [ -f "$1/.git" ]
 }
 
 is_submodule() {  # $1 = 目录
@@ -142,79 +119,9 @@ try_mirrors() {   # $1=目录 $2=分支 $3.. = URL
     return 1
 }
 
-lock_sha_for() { # $1 = component
-    awk -v n="$1" '$1 == n && $2 !~ /^#/ { print $2; exit }' "$lock_file" 2>/dev/null
-}
-
-fetch_locked() { # $1=目录 $2=sha $3..=URL
-    local path="$1" sha="$2"; shift 2
-    local u head=""
-
-    if has_git "$path"; then
-        head="$(git -C "$path" rev-parse HEAD 2>/dev/null || true)"
-        if [ "$head" = "$sha" ]; then
-            return 0
-        fi
-        # 处理缓存里留下的残缺 .git 目录。
-        if ! git -C "$path" rev-parse --git-dir >/dev/null 2>&1; then
-            run rm -rf "$path/.git"
-            run git -C "$path" init -q
-        fi
-    elif has_sources "$path"; then
-        echo "!! $path 有源码但没有 git 历史，无法校验锁定 commit；请用 -f 重新拉取" >&2
-        return 1
-    else
-        run mkdir -p "$path"
-        run git -C "$path" init -q
-    fi
-
-    if ! git -C "$path" remote get-url origin >/dev/null 2>&1; then
-        run git -C "$path" remote add origin "$1"
-    fi
-
-    for u in "$@"; do
-        printf '    尝试锁定源: %s\n' "$u"
-        if run git -C "$path" fetch --depth 1 "$u" "$sha"; then
-            if run git -C "$path" checkout --detach --force "$sha"; then
-                return 0
-            fi
-        fi
-    done
-    return 1
-}
-
 while IFS='|' read -r name path branch urls; do
     [ -z "$name" ] && continue
     [ -n "$only" ] && [ "$only" != "$name" ] && continue
-
-    if is_locked; then
-        sha="$(lock_sha_for "$name")"
-        if [ -z "$sha" ]; then
-            printf '%-12s 失败（sources.lock 中没有 %s）\n' "$name" "$name"
-            names+=("$name"); states+=("失败"); details+=("sources.lock 缺少该组件")
-            continue
-        fi
-
-        if [ "$force" = 0 ] && has_git "$path" \
-            && [ "$(git -C "$path" rev-parse HEAD 2>/dev/null || true)" = "$sha" ]; then
-            printf '%-12s 跳过（已锁定 %s）\n' "$name" "${sha:0:12}"
-            names+=("$name"); states+=("跳过"); details+=("已锁定 ${sha:0:12}")
-            continue
-        fi
-
-        printf '%-12s 锁定拉取 %s...\n' "$name" "${sha:0:12}"
-        if [ "$force" = 1 ]; then
-            clean_dir "$path" || true
-        fi
-        if fetch_locked "$path" "$sha" $urls; then
-            state="成功"; detail="锁定 ${sha:0:12}"
-        else
-            state="失败"; detail="无法拉取锁定 commit ${sha:0:12}"
-        fi
-        printf '%-12s %s\n' "$name" "$state"
-        names+=("$name"); states+=("$state"); details+=("$detail")
-        continue
-    fi
 
     if [ "$force" = 0 ] && is_submodule "$path"; then
         if try_submodule "$path"; then

@@ -26,7 +26,6 @@ jobs:
       builder-image-tag: glibc228
       host-glibc-max: "2.28"
       target-glibc-max: "2.36"
-      fetch-locked: true
 
   # LLVM gets its own job budget and consumes the matching GCC archive from
   # the build job.  It does not rebuild GCC or any target C library.
@@ -48,7 +47,6 @@ jobs:
       builder-image-tag: glibc228
       host-glibc-max: "2.28"
       target-glibc-max: "2.36"
-      fetch-locked: true
 
   verify:
     needs: [build, build-llvm]
@@ -101,7 +99,7 @@ jobs:
               prefix="$(find "$tmpdir/root" -mindepth 1 -maxdepth 1 -type d -print -quit)"
               test -f "$prefix/LICENSE"
               test -f "$prefix/THIRD_PARTY_NOTICES.md"
-              test -f "$prefix/SOURCES.lock"
+              test -f "$prefix/VERSIONS.txt"
               printf 'int main(void) { return 0; }\n' > "$tmpdir/smoke.c"
 
               if [[ "$compiler" == llvm ]]; then
@@ -175,8 +173,8 @@ jobs:
             - GDB, QEMU, and testsuite runs are not included
             - License and third-party notices are included in every archive
               and attached to this release
-            - Source revisions: locked by `sources.lock` at
-              `${{ github.server_url }}/${{ github.repository }}/blob/${{ github.sha }}/sources.lock`
+            - Source revisions are recorded in `VERSIONS.txt` in every archive
+              and are fixed by the submodule gitlinks in this tagged commit
             - Verify downloads with `sha256sum -c SHA256SUMS`
           files: |
             LICENSE

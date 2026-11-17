@@ -91,27 +91,20 @@ make fetch FETCH_ARGS=-f
 FETCH_USE_SUBMODULE=0 make fetch
 ```
 
-正式 CI 按根目录的 `sources.lock` 固定每个组件的 commit。手动复现锁定版本：
-
-```bash
-FETCH_LOCKED=1 scripts/fetch-sources.sh gcc
-```
-
-锁定模式会校验已有源码的 `HEAD`；不一致时会从镜像表拉取锁定的 SHA。只改
-`sources.lock` 才会改变正式构建的源码版本，`--remote` 不会参与锁定模式。
-
-开发构建使用 gitlink 记录的源码版本。需要升级某个组件时，可以执行：
+源码版本由 submodule gitlink 固定，与 `riscv-gnu-toolchain` 的做法一致。
+Source CI 和 Release 都使用当前 checkout 中记录的 gitlink commit。需要升级
+某个组件时，可以执行：
 
 ```bash
 git submodule update --remote gcc
 git -C gcc rev-parse HEAD
-git add gcc sources.lock
+git add gcc
 git commit -m "gcc: update source commit"
 ```
 
-开发版以 gitlink 为准，提交后 `Source CI` 会按这个 commit 构建。若该 commit
-也要进入正式 Release，还需要把 `sources.lock` 中对应组件的 SHA 改成同一个
-commit；正式 tag Release 以 `sources.lock` 为准。
+提交后 `Source CI` 会按新的 gitlink 构建；打 `v*` tag 时，Release 使用该
+tag 指向的同一组 gitlink 构建。实际构建出的组件 commit 会写入每个包的
+`VERSIONS.txt`。
 
 ## 构建目标
 
@@ -162,7 +155,6 @@ make report-linux REPORT_STRICT=1
 .
 ├── configure / configure.ac      顶层 autoconf 配置
 ├── Makefile.in                   顶层构建规则
-├── sources.lock                  正式构建使用的源码 commit
 ├── linux-headers/include/        vendored LoongArch UAPI 头文件
 ├── scripts/                      源码拉取、DejaGNU board、QEMU/awk/sed wrapper
 ├── .github/containers/          glibc 2.28 构建容器
@@ -175,16 +167,19 @@ make report-linux REPORT_STRICT=1
 
 ## CI 与发布
 
-GitHub Actions 使用与本地相同的 `configure` 和 `make` 流程，但没有
-nightly/定时任务：
+GitHub Actions 使用与本地相同的 `configure` 和 `make` 流程：
 
 - `.github/workflows/source-ci.yml`：推送或提 PR 到 `main`，且修改了
   `gcc`、`binutils`、`glibc`、`newlib`、`musl`、`llvm` 等 gitlink、
   `.gitmodules` 或源码拉取脚本时自动触发。它按 gitlink 的源码 commit
-  构建六个 GCC 包和六个 GCC+LLVM 包用于验证，但不创建 Release。该 workflow
-  没有 `schedule`，不会每天定时运行。
+  构建六个 GCC 包和六个 GCC+LLVM 包用于验证，但不创建 Release。
+- `.github/workflows/nightly-release.yml`：每天 00:00 UTC（北京时间 08:00）
+  检查默认分支最近一次 commit。最近 24 小时内有提交时，重新构建六个 GCC
+  包和六个 GCC+LLVM 包，并发布 `nightly-YYYY.MM.DD` 预发布 Release；没有
+  近期提交时跳过。手动运行会绕过 24 小时检查，便于测试 nightly 链路。
+  Nightly 使用自己这次 run 的 Artifact，不复用 Source CI 的 Artifact。
 - `.github/workflows/release.yml`：正式发布链路。推送 `v*` tag 时在
-  glibc 2.28 容器中按 `sources.lock` 构建六个 GCC 包和六个 GCC+LLVM 包：
+  glibc 2.28 容器中按该 tag 的 gitlink 构建六个 GCC 包和六个 GCC+LLVM 包：
   x86_64/aarch64 × newlib/glibc/musl。LLVM 使用独立的 `build-llvm` job，
   复用同一矩阵的 GCC 包，只补编译 LLVM。发布前分别在 x86_64 和 aarch64
   runner 上重新解压并检查对应架构的 GCC 和 Clang；每个包都包含许可证和源码
@@ -204,9 +199,9 @@ nightly/定时任务：
   必须重新运行该 workflow 并覆盖同名 `glibc228` 标签，否则 LLVM job 仍会
   使用旧镜像。
 
-正式发布矩阵会自动设置 `FETCH_LOCKED=1`，从 `sources.lock` 读取固定
-commit；源码缓存 key 也包含锁文件哈希。构建在 `manylinux_2_28` 容器内完成，
-因此用户不需要安装 AlmaLinux 或 `manylinux`，容器只是构建环境。
+正式发布矩阵和 Source CI 都按 submodule gitlink 拉取源码。构建在
+`manylinux_2_28` 容器内完成，因此用户不需要安装 AlmaLinux 或 `manylinux`，
+容器只是构建环境。
 中间构建产物作为 Actions Artifact 只保留 1 天；长期保存以 GitHub Release
 附件为准。
 
@@ -217,13 +212,14 @@ commit；源码缓存 key 也包含锁文件哈希。构建在 `manylinux_2_28` 
    `Source CI`。
 3. 如需手动验证普通宿主构建、LLVM 或 QEMU/testsuite，运行 `Build`；
    私有库额度有限时先运行 `LLVM Smoke` 的 `newlib`，再运行 `linux`。
-4. 发版前把 `sources.lock` 更新到要发布的 commit，再推送 `v0.1.0` 这类
-   tag，由正式的 `Release` workflow 构建并发布六个 glibc 2.28 GCC 包和
-   六个 GCC+LLVM 包。
+4. 需要自动验证夜间构建链路时，手动运行 `Nightly Release`；正式发布仍以
+   `v*` tag 为准。
+5. 发版前更新并提交要发布的 gitlink，再推送 `v0.1.0` 这类 tag，由正式的
+   `Release` workflow 构建并发布六个 glibc 2.28 GCC 包和六个 GCC+LLVM 包。
 
 构建出来的宿主二进制只要求 glibc 2.28+；`newlib` 和 `musl` 目标本身不使用
-glibc。所有归档都包含 `LICENSE`、`THIRD_PARTY_NOTICES.md`、`VERSIONS.txt`
-和 `SOURCES.lock`，其中后两者记录实际源码 commit；`BUILD-INFO.txt` 记录
+glibc。所有归档都包含 `LICENSE`、`THIRD_PARTY_NOTICES.md`、`VERSIONS.txt`，
+其中 `VERSIONS.txt` 记录实际源码 commit；`BUILD-INFO.txt` 记录
 宿主架构、glibc 上限和目标库。正式 Release 还会提供 `SHA256SUMS`，下载后
 可在同一目录执行 `sha256sum -c SHA256SUMS`。
 
@@ -232,7 +228,7 @@ glibc。所有归档都包含 `LICENSE`、`THIRD_PARTY_NOTICES.md`、`VERSIONS.t
 产物命名格式：
 
 ```text
-loongarch64-{elf|glibc|musl}-{x86_64|aarch64}-host-glibc228[-target-glibc236][-llvm][-release].tar.xz
+loongarch64-{elf|glibc|musl}-{x86_64|aarch64}-host-glibc228[-target-glibc236][-llvm][-release|-nightly].tar.xz
 ```
 
 ## 注意

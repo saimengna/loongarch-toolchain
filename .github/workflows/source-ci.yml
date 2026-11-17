@@ -60,7 +60,6 @@ jobs:
       builder-image-tag: glibc228
       host-glibc-max: "2.28"
       target-glibc-max: "2.36"
-      fetch-locked: false
 
   # LLVM is built in a separate job so it has its own 6-hour job budget.  It
   # restores the matching GCC artifact instead of rebuilding the GNU
@@ -84,4 +83,3 @@ jobs:
       builder-image-tag: glibc228
       host-glibc-max: "2.28"
       target-glibc-max: "2.36"
-      fetch-locked: false

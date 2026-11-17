@@ -7,7 +7,7 @@ It also contains or consumes third-party material. The license and copyright
 notices in the original files and upstream repositories control those files.
 This document is a summary, not a replacement for those notices.
 It is copied into each packaged toolchain together with `LICENSE` and the
-corresponding `SOURCES.lock`.
+corresponding `VERSIONS.txt`.
 
 ## Linux UAPI headers
 
@@ -57,6 +57,6 @@ Some optional components, such as uClibc-ng and Picolibc, are not currently
 part of the supported release matrix. If they are added later, their own
 licenses must be included in this notice.
 
-Always check the license files in the exact upstream revision recorded by
-`sources.lock` and in each component's source tree before distributing source
-or binary artifacts.
+Always check the license files in the exact upstream revision recorded by the
+submodule gitlinks and by `VERSIONS.txt`, and in each component's source tree,
+before distributing source or binary artifacts.
