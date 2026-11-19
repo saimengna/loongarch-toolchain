@@ -66,8 +66,13 @@ check_host_files() {
       echo "ABI 失败: $file 需要 GLIBC_$version，高于宿主上限 $HOST_GLIBC_MAX" >&2
       exit 1
     fi
-  done < <(find "$PREFIX/bin" -maxdepth 1 \( -type f -o -type l \) -print0)
-  (( seen > 0 )) || { echo "ABI 失败: $PREFIX/bin 下没有找到 ELF" >&2; exit 1; }
+  done < <(
+    find "$PREFIX/bin" -maxdepth 1 \( -type f -o -type l \) -print0
+    find "$PREFIX/libexec/gcc" -mindepth 3 -maxdepth 3 -type f -print0 2>/dev/null
+    find "$PREFIX/lib" -maxdepth 1 -type f \
+      \( -name 'libmpfr.so.4*' -o -name 'libmpc.so.3*' -o -name 'libgmp.so.10*' \) -print0 2>/dev/null
+  )
+  (( seen > 0 )) || { echo "ABI 失败: 工具链中没有找到宿主 ELF" >&2; exit 1; }
   echo "宿主 ABI 检查通过: 最高 GLIBC <= $HOST_GLIBC_MAX"
 }
 

@@ -16,6 +16,8 @@ on:
       - 'Makefile.in'
       - 'scripts/fetch-sources.sh'
       - 'scripts/ci-build-in-container.sh'
+      - 'scripts/check-toolchain-abi.sh'
+      - 'scripts/bundle-host-libs.sh'
       - '.github/workflows/source-ci.yml'
       - '.github/workflows/build-reusable.yaml'
   pull_request:
@@ -32,6 +34,8 @@ on:
       - 'Makefile.in'
       - 'scripts/fetch-sources.sh'
       - 'scripts/ci-build-in-container.sh'
+      - 'scripts/check-toolchain-abi.sh'
+      - 'scripts/bundle-host-libs.sh'
       - '.github/workflows/source-ci.yml'
       - '.github/workflows/build-reusable.yaml'
 

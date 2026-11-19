@@ -52,6 +52,13 @@ only the submodule gitlinks are recorded here.
 | musl | https://github.com/kraj/musl | MIT |
 | QEMU | https://gitlab.com/qemu-project/qemu | GPLv2 and other component-specific licenses |
 | LLVM | https://github.com/llvm/llvm-project | Apache-2.0 WITH LLVM-exception |
+| GMP | https://gmplib.org/ | LGPLv3+ or GPLv2+ |
+| MPFR | https://www.mpfr.org/ | LGPLv3+ |
+| MPC | https://www.multiprecision.org/mpc/ | LGPLv3+ |
+
+The CI-produced toolchain archives also include runtime copies of GMP, MPFR,
+and MPC shared libraries from the glibc-2.28 builder image. Their copyright and
+license notices remain with the upstream projects.
 
 Some optional components, such as uClibc-ng and Picolibc, are not currently
 part of the supported release matrix. If they are added later, their own

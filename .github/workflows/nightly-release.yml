@@ -134,6 +134,8 @@ jobs:
             Automated nightly LoongArch GCC and GCC+LLVM toolchains.
 
             - Host glibc requirement: 2.28 or newer
+            - Host runtime libraries MPFR/MPC/GMP are bundled under `lib/`;
+              no `LD_LIBRARY_PATH` is required
             - Target: `loongarch64-lp64d`
             - glibc target runtime: glibc 2.36
             - Twelve archives: x86_64 and aarch64 hosts, each with

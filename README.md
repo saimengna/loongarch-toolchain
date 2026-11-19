@@ -223,6 +223,11 @@ glibc。所有归档都包含 `LICENSE`、`THIRD_PARTY_NOTICES.md`、`VERSIONS.t
 宿主架构、glibc 上限和目标库。正式 Release 还会提供 `SHA256SUMS`，下载后
 可在同一目录执行 `sha256sum -c SHA256SUMS`。
 
+CI 构建的包还会在 `lib/` 中附带 glibc 2.28 构建镜像使用的
+`libmpfr.so.4`、`libmpc.so.3`、`libgmp.so.10`，并给宿主 ELF 写入基于
+`$ORIGIN` 的相对 RPATH。用户不需要单独安装这些运行库，也不需要设置
+`LD_LIBRARY_PATH`。
+
 第三方组件的许可证和版权说明见 `THIRD_PARTY_NOTICES.md`。
 
 产物命名格式：

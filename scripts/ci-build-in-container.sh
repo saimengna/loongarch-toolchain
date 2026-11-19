@@ -15,6 +15,7 @@ HOST_GLIBC_MAX="2.28"
 TARGET_GLIBC_MAX="2.36"
 JOBS="${JOBS:-$(nproc)}"
 PREBUILT_GNU="${CI_PREBUILT_GNU:-0}"
+DEFER_PACKAGING=0
 
 usage() {
   cat <<'EOT'
@@ -22,6 +23,7 @@ usage() {
 
   --compiler gcc|llvm  构建 GCC 或 LLVM（默认 gcc）
   --prebuilt-gnu       使用 --prefix 中已有的 GCC 工具链，只构建 LLVM
+  --defer-package      只构建和整理工具链，由宿主机写 RPATH 后再打包
 EOT
 }
 
@@ -38,6 +40,7 @@ while [[ $# -gt 0 ]]; do
     --host-glibc-max) HOST_GLIBC_MAX="$2"; shift 2 ;;
     --target-glibc-max) TARGET_GLIBC_MAX="$2"; shift 2 ;;
     --prebuilt-gnu) PREBUILT_GNU=1; shift ;;
+    --defer-package) DEFER_PACKAGING=1; shift ;;
     -h|--help) usage; exit 0 ;;
     *) echo "未知参数: $1" >&2; usage; exit 1 ;;
   esac
@@ -184,6 +187,12 @@ else
 fi
 file /tmp/loongarch-smoke.o | grep -qi loongarch
 
+# The glibc-2.28 builder links its host tools against MPFR 3.x, MPC 1.x, and
+# GMP 6.x.  Ship those libraries with the toolchain; the host-side workflow
+# adds RPATH after the container exits because patchelf may not be installed
+# in the builder image.
+bash scripts/bundle-host-libs.sh --prefix "$PREFIX" --copy-only
+
 make versions
 cp versions.txt "$PREFIX/VERSIONS.txt"
 cat > "$PREFIX/BUILD-INFO.txt" <<EOF
@@ -197,6 +206,7 @@ target_glibc_version=${glibc_version:-none}
 target_glibc_max=$TARGET_GLIBC_MAX
 compiler=$COMPILER
 builder_image=${BUILDER_IMAGE:-unknown}
+bundled_host_libs=libmpfr.so.4,libmpc.so.3,libgmp.so.10
 EOF
 
 bash scripts/check-toolchain-abi.sh \
@@ -206,6 +216,10 @@ bash scripts/check-toolchain-abi.sh \
   --target-glibc-max "$TARGET_GLIBC_MAX"
 
 mkdir -p "$OUTDIR"
+if [[ "$DEFER_PACKAGING" == 1 ]]; then
+  echo "构建完成；等待宿主机写入 RPATH 后打包"
+  exit 0
+fi
 if [[ "$STRIP_MODE" == "unstripped" || "$STRIP_MODE" == "both" ]]; then
   bash scripts/package-toolchain.sh \
     --prefix "$PREFIX" --mode "$MODE" --outdir "$OUTDIR" \

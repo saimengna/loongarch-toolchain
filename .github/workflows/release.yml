@@ -100,21 +100,44 @@ jobs:
               test -f "$prefix/LICENSE"
               test -f "$prefix/THIRD_PARTY_NOTICES.md"
               test -f "$prefix/VERSIONS.txt"
+              for lib in libmpfr.so.4 libmpc.so.3 libgmp.so.10; do
+                test -e "$prefix/lib/${lib}" || { echo "missing bundled $lib" >&2; exit 1; }
+              done
               printf 'int main(void) { return 0; }\n' > "$tmpdir/smoke.c"
+              printf 'int smoke_cpp(void) { return 0; }\n' > "$tmpdir/smoke.cpp"
 
               if [[ "$compiler" == llvm ]]; then
                 cc="$prefix/bin/${triple}-clang"
                 cxx="$prefix/bin/${triple}-clang++"
                 test -x "$cc"
                 test -x "$cxx"
-                "$cc" --version >/dev/null
-                "$cc" --target="$triple" -mabi=lp64d -c "$tmpdir/smoke.c" -o "$tmpdir/smoke.o"
+                env -u LD_LIBRARY_PATH "$cc" --version >/dev/null
+                env -u LD_LIBRARY_PATH "$cc" --target="$triple" -mabi=lp64d -c "$tmpdir/smoke.c" -o "$tmpdir/smoke.o"
+                env -u LD_LIBRARY_PATH "$cxx" --target="$triple" -mabi=lp64d -c "$tmpdir/smoke.cpp" -o "$tmpdir/smoke-cpp.o"
               else
                 cc="$prefix/bin/${triple}-gcc"
+                cxx="$prefix/bin/${triple}-g++"
                 test -x "$cc"
-                "$cc" --version >/dev/null
-                "$cc" -dumpmachine | grep -qx "$triple"
-                "$cc" -c "$tmpdir/smoke.c" -o "$tmpdir/smoke.o"
+                env -u LD_LIBRARY_PATH "$cc" --version >/dev/null
+                env -u LD_LIBRARY_PATH "$cc" -dumpmachine | grep -qx "$triple"
+                env -u LD_LIBRARY_PATH "$cc" -c "$tmpdir/smoke.c" -o "$tmpdir/smoke.o"
+                if [[ -x "$cxx" ]]; then
+                  env -u LD_LIBRARY_PATH "$cxx" -c "$tmpdir/smoke.cpp" -o "$tmpdir/smoke-cpp.o"
+                fi
+
+                for program in cc1 cc1plus lto1; do
+                  path="$(env -u LD_LIBRARY_PATH "$cc" -print-prog-name="$program" 2>/dev/null || true)"
+                  [[ -f "$path" ]] || continue
+                  if env -u LD_LIBRARY_PATH ldd "$path" 2>&1 | grep -q 'not found'; then
+                    echo "missing runtime library for $path" >&2
+                    env -u LD_LIBRARY_PATH ldd "$path" >&2
+                    exit 1
+                  fi
+                done
+              fi
+              if ! readelf -d "$cc" | grep -Fq '$ORIGIN'; then
+                echo "missing relative RPATH in $cc" >&2
+                exit 1
               fi
               file "$tmpdir/smoke.o" | grep -qi loongarch
               echo "verified: ${base}-release.tar.xz"
@@ -165,6 +188,8 @@ jobs:
             GCC-only variant and a GCC+LLVM variant.
 
             - Host glibc requirement: 2.28 or newer
+            - Host runtime libraries MPFR/MPC/GMP are bundled under `lib/`;
+              no `LD_LIBRARY_PATH` is required
             - Target: `loongarch64-lp64d`
             - glibc target runtime: glibc 2.36
             - GCC archives: binutils + GCC + target C library

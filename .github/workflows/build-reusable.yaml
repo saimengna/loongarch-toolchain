@@ -375,6 +375,17 @@ jobs:
           test -n "$image"
           docker pull "$image"
 
+      - name: Install patchelf
+        if: ${{ inputs.builder-image-repository != '' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if ! command -v patchelf >/dev/null 2>&1; then
+            sudo apt-get update
+            sudo apt-get install -y patchelf
+          fi
+          patchelf --version
+
       - name: Build and package in glibc 2.28 container
         if: ${{ inputs.builder-image-repository != '' }}
         shell: bash
@@ -404,7 +415,82 @@ jobs:
               --stripped-name '${{ steps.names.outputs.stripped }}' \
               --strip-mode '${{ inputs.strip }}' \
               --host-glibc-max '${{ inputs.host-glibc-max }}' \
-              --target-glibc-max '${{ inputs.target-glibc-max }}'"
+              --target-glibc-max '${{ inputs.target-glibc-max }}' \
+              --defer-package"
+
+      - name: Finalize glibc 2.28 toolchain
+        if: ${{ inputs.builder-image-repository != '' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          prefix="$GITHUB_WORKSPACE/install-toolchain"
+
+          bash scripts/bundle-host-libs.sh --prefix "$prefix" --patch-only
+
+          case '${{ matrix.mode }}' in
+            linux) triple=loongarch64-unknown-linux-gnu ;;
+            musl)  triple=loongarch64-unknown-linux-musl ;;
+            *)     triple=loongarch64-unknown-elf ;;
+          esac
+          abi="$(echo '${{ matrix.target }}' | sed 's/^loongarch64-//')"
+
+          if [[ '${{ matrix.compiler }}' == llvm ]]; then
+            cc="$prefix/bin/${triple}-clang"
+            cxx="$prefix/bin/${triple}-clang++"
+          else
+            cc="$prefix/bin/${triple}-gcc"
+            cxx="$prefix/bin/${triple}-g++"
+          fi
+          test -x "$cc"
+          env -u LD_LIBRARY_PATH "$cc" --version
+          if [[ '${{ matrix.compiler }}' != llvm ]]; then
+            env -u LD_LIBRARY_PATH "$cc" -dumpmachine | grep -qx "$triple"
+          fi
+
+          tmpdir="$(mktemp -d)"
+          printf 'int smoke(void) { return 42; }\n' > "$tmpdir/smoke.c"
+          printf 'int smoke_cpp(void) { return 42; }\n' > "$tmpdir/smoke.cpp"
+          if [[ '${{ matrix.compiler }}' == llvm ]]; then
+            env -u LD_LIBRARY_PATH "$cc" --target="$triple" -mabi="$abi" -c "$tmpdir/smoke.c" -o "$tmpdir/smoke.o"
+          else
+            env -u LD_LIBRARY_PATH "$cc" -c "$tmpdir/smoke.c" -o "$tmpdir/smoke.o"
+          fi
+          file "$tmpdir/smoke.o" | grep -qi loongarch
+
+          if [[ -x "$cxx" ]]; then
+            if [[ '${{ matrix.compiler }}' == llvm ]]; then
+              env -u LD_LIBRARY_PATH "$cxx" --target="$triple" -mabi="$abi" -c "$tmpdir/smoke.cpp" -o "$tmpdir/smoke-cpp.o"
+            else
+              env -u LD_LIBRARY_PATH "$cxx" -c "$tmpdir/smoke.cpp" -o "$tmpdir/smoke-cpp.o"
+            fi
+            file "$tmpdir/smoke-cpp.o" | grep -qi loongarch
+          fi
+
+          for program in cc1 cc1plus lto1; do
+            path="$(env -u LD_LIBRARY_PATH "$cc" -print-prog-name="$program" 2>/dev/null || true)"
+            [[ -f "$path" ]] || continue
+            if env -u LD_LIBRARY_PATH ldd "$path" 2>&1 | grep -q 'not found'; then
+              echo "缺少动态库依赖: $path" >&2
+              env -u LD_LIBRARY_PATH ldd "$path" >&2
+              exit 1
+            fi
+          done
+          rm -rf "$tmpdir"
+
+          case '${{ inputs.strip }}' in
+            unstripped|both)
+              bash scripts/package-toolchain.sh \
+                --prefix "$prefix" --mode '${{ matrix.mode }}' --outdir "$GITHUB_WORKSPACE" \
+                --name '${{ steps.names.outputs.unstripped }}'
+              ;;
+          esac
+          case '${{ inputs.strip }}' in
+            stripped|both)
+              bash scripts/package-toolchain.sh \
+                --prefix "$prefix" --mode '${{ matrix.mode }}' --outdir "$GITHUB_WORKSPACE" \
+                --name '${{ steps.names.outputs.stripped }}' --strip
+              ;;
+          esac
 
       - name: Configure
         if: ${{ inputs.builder-image-repository == '' }}
