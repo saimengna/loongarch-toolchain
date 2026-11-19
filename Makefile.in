@@ -330,7 +330,7 @@ endif
 
 # 拉取/更新单个源码组件：
 #   * gitlink 子模块                       -> 按主仓库记录的 commit 初始化/更新
-#   * 非子模块目录里已有源码               -> 跳过，不动它
+#   * 已有源码                             -> 非 gitlink 直接跳过；有 gitlink 时核对 HEAD
 #   * 目录为空 / 只剩 .git 空壳            -> 初始化子模块，失败再依次尝试备用镜像
 # 具体逻辑与换源表都在 scripts/fetch-sources.sh 里。
 $(srcdir)/gcc $(srcdir)/binutils $(srcdir)/gdb $(srcdir)/glibc \

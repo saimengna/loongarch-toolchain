@@ -10,8 +10,9 @@
 #
 # 行为:
 #   1) gitlink 目录按主仓库记录的 commit 初始化/更新。
-#   2) 非 gitlink 的已有源码默认不覆盖。
+#   2) 已有源码默认不覆盖；有 gitlink 时会核对 HEAD，版本不一致则失败。
 #   3) 空目录先尝试子模块，失败后按镜像表依次尝试备用源。
+#      有 gitlink 时，备用源也必须拉取该 gitlink SHA；默认不退回分支最新提交。
 #   4) 结束后打印每个项目的状态；有失败则退出码非 0
 #      （可用 FETCH_STRICT=0 关掉）。
 #
@@ -36,6 +37,7 @@ done
 
 use_submodule="${FETCH_USE_SUBMODULE:-1}"
 strict="${FETCH_STRICT:-1}"
+allow_branch_fallback="${FETCH_ALLOW_BRANCH_FALLBACK:-0}"
 
 # ---------------------------------------------------------------------------
 # 源码表:  名字 | 目录 | 分支 | 备用 URL(空格分隔，按顺序尝试)
@@ -75,6 +77,34 @@ is_submodule() {  # $1 = 目录
         | awk '$1 == 160000 { found = 1 } END { exit found ? 0 : 1 }'
 }
 
+gitlink_sha() {   # $1 = 目录；输出主仓库记录的 submodule commit
+    git -C "$srcdir" ls-tree HEAD -- "$1" 2>/dev/null \
+        | awk '$1 == 160000 { print $3; exit }'
+}
+
+check_existing_source() { # $1=目录 $2=gitlink SHA；已有源码是否就是固定 commit
+    local path="$1" sha="$2" head
+
+    [ -n "$sha" ] || return 0
+    head="$(git -C "$path" rev-parse --verify HEAD 2>/dev/null)" || head=""
+
+    if [ -z "$head" ]; then
+        echo "!! 已有源码 $path 无法核对版本（没有可用的 git HEAD）" >&2
+        echo "   期望 gitlink: $sha" >&2
+        echo "   如需按固定 commit 重新拉取，请运行: make fetch FETCH_ARGS=-f" >&2
+        return 1
+    fi
+
+    if [ "$head" != "$sha" ]; then
+        echo "!! 已有源码 $path 版本不匹配" >&2
+        echo "   当前 HEAD: $head" >&2
+        echo "   期望 gitlink: $sha" >&2
+        echo "   如需丢弃现有源码并按 gitlink 重新拉取，请运行: make fetch FETCH_ARGS=-f" >&2
+        return 1
+    fi
+    return 0
+}
+
 run() {           # 统一处理 dry-run
     if [ "$dry" = 1 ]; then
         printf '       [dry-run] %s\n' "$*"
@@ -104,16 +134,68 @@ try_submodule() { # $1 = 目录
     run git -C "$srcdir" submodule update --init --depth 1 "$1"
 }
 
-try_mirrors() {   # $1=目录 $2=分支 $3.. = URL
-    local path="$1" branch="$2"; shift 2
+fetch_exact_sha() { # $1=目录 $2=URL $3=SHA
+    local path="$1" url="$2" sha="$3"
+
+    if [ "$dry" = 1 ]; then
+        printf '       [dry-run] git init %s && git fetch %s %s && git checkout FETCH_HEAD\n' \
+            "$path" "$url" "$sha"
+        return 0
+    fi
+
+    git init -q "$path" || return 1
+    git -C "$path" remote add origin "$url" || return 1
+
+    # Some servers reject fetching an unadvertised SHA in shallow mode.  Try a
+    # shallow fetch first, then a normal fetch for mirrors that require it.
+    if git -C "$path" fetch --depth 1 origin "$sha" 2>/dev/null; then
+        git -C "$path" checkout --detach FETCH_HEAD
+        return $?
+    fi
+    if git -C "$path" fetch origin "$sha" 2>/dev/null; then
+        git -C "$path" checkout --detach FETCH_HEAD
+        return $?
+    fi
+    return 1
+}
+
+try_mirrors() {   # $1=目录 $2=分支 $3=gitlink SHA $4.. = URL
+    local path="$1" branch="$2" sha="$3"; shift 3
     local u
+
+    MIRROR_MODE=""
+
+    if [ -n "$sha" ]; then
+        for u in "$@"; do
+            printf '    尝试源: %s（gitlink %s）\n' "$u" "$sha"
+            clean_dir "$path" || return 1
+            if fetch_exact_sha "$path" "$u" "$sha"; then
+                MIRROR_MODE="gitlink"
+                return 0
+            fi
+            echo "    !! 该源无法提供 gitlink commit，继续尝试下一个源" >&2
+        done
+
+        if [ "$allow_branch_fallback" != 1 ]; then
+            echo "    !! 无法获取 gitlink commit，拒绝退回分支最新提交" >&2
+            return 1
+        fi
+        echo "    !! 警告: 将退回分支最新提交，源码可能不再与 gitlink 一致" >&2
+    fi
+
     for u in "$@"; do
         printf '    尝试源: %s\n' "$u"
         clean_dir "$path"
         if [ -n "$branch" ]; then
-            run git clone --depth 1 --branch "$branch" "$u" "$path" && return 0
+            run git clone --depth 1 --branch "$branch" "$u" "$path" && {
+                MIRROR_MODE="branch"
+                return 0
+            }
         else
-            run git clone --depth 1 "$u" "$path" && return 0
+            run git clone --depth 1 "$u" "$path" && {
+                MIRROR_MODE="branch"
+                return 0
+            }
         fi
     done
     return 1
@@ -132,25 +214,44 @@ while IFS='|' read -r name path branch urls; do
     fi
 
     if [ "$force" = 0 ] && has_sources "$path"; then
+        sha="$(gitlink_sha "$path")"
+        if ! check_existing_source "$path" "$sha"; then
+            names+=("$name"); states+=("失败"); details+=("已有源码与 gitlink 不一致")
+            continue
+        fi
+
         # 已有源码：不动它，只补一个 .git 以满足 Makefile 的前置条件
         if [ ! -e "$path/.git" ]; then
             run git -C "$path" init -q
         fi
         printf '%-12s 跳过（已有源码）\n' "$name"
-        names+=("$name"); states+=("跳过"); details+=("已有源码，未改动")
+        if [ -n "$sha" ]; then
+            names+=("$name"); states+=("跳过"); details+=("已有源码，gitlink 已匹配")
+        else
+            names+=("$name"); states+=("跳过"); details+=("已有源码，未改动")
+        fi
         continue
     fi
 
     printf '%-12s 拉取中...\n' "$name"
     clean_dir "$path"
     state=""; detail=""
+    sha="$(gitlink_sha "$path")"
 
     if try_submodule "$path"; then
         state="成功"; detail="git submodule (gitlink commit)"
-    elif try_mirrors "$path" "$branch" $urls; then
-        state="成功"; detail="备用镜像 clone (${branch:-默认分支})"
+    elif try_mirrors "$path" "$branch" "$sha" $urls; then
+        if [ "$MIRROR_MODE" = "gitlink" ]; then
+            state="成功"; detail="备用镜像 clone (gitlink ${sha:0:12})"
+        else
+            state="成功"; detail="备用镜像 clone (分支 ${branch:-默认分支}，未固定)"
+        fi
     else
-        state="失败"; detail="所有源都连不上，请手动换源"
+        if [ -n "$sha" ]; then
+            state="失败"; detail="无法按 gitlink ${sha:0:12} 拉取，未退回分支"
+        else
+            state="失败"; detail="所有源都连不上，请手动换源"
+        fi
     fi
 
     printf '%-12s %s\n' "$name" "$state"

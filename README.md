@@ -78,12 +78,19 @@ make fetch
 `bash scripts/fetch-sources.sh`。
 
 `make fetch` 会优先按 gitlink 初始化子模块，失败后按
-`scripts/fetch-sources.sh` 顶部的镜像表逐个尝试备用源。gitlink 子模块会
-同步到主仓库记录的 commit；非 gitlink 的已有源码默认不覆盖。强制重新拉取使用：
+`scripts/fetch-sources.sh` 顶部的镜像表逐个尝试备用源。有 gitlink 时，
+备用源也必须拉取主仓库记录的同一个 commit；取不到该 SHA 时默认让构建失败，
+不会静默改用分支最新提交。只有显式设置 `FETCH_ALLOW_BRANCH_FALLBACK=1` 才会
+退回分支最新提交，并打印源码可能漂移的警告。已有源码默认不覆盖；有 gitlink
+时会核对当前 `HEAD`，不一致会直接失败并提示重新拉取。非 gitlink 的已有源码
+仍然跳过。强制重新拉取使用：
 
 ```bash
 make fetch FETCH_ARGS=-f
 ```
+
+`-f` 只表示强制重新下载；对于有 gitlink 的组件，仍然会拉取同一个固定
+commit，不会自动改用分支最新提交。
 
 本机连不上 GitHub HTTPS、但 SSH 可用时，可以跳过子模块直接走镜像/SSH：
 
