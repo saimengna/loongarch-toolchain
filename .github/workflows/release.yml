@@ -174,8 +174,14 @@ jobs:
             done
           done
 
+  qemu-test:
+    needs: [build, build-llvm]
+    uses: ./.github/workflows/qemu-test-reusable.yaml
+    with:
+      artifact-name: release
+
   publish:
-    needs: [build, build-llvm, verify]
+    needs: [build, build-llvm, verify, qemu-test]
     runs-on: ubuntu-24.04
     steps:
       - name: Checkout license notices
@@ -224,7 +230,10 @@ jobs:
             - GCC archives: binutils + GCC + target C library
             - LLVM archives: the matching GCC toolchain + clang/clang++/lld
               (plus LLVM runtimes for Linux and musl targets)
-            - GDB, QEMU, and testsuite runs are not included
+            - QEMU runtime smoke tests passed for glibc and musl; newlib
+              packages received compile-only checks because they use a bare-metal
+              runtime
+            - GDB and the full GCC testsuite are not included
             - License and third-party notices are included in every archive
               and attached to this release
             - Source revisions are recorded in `VERSIONS.txt` in every archive

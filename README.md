@@ -156,6 +156,28 @@ make package PACKAGE_MODE=linux PACKAGE_OUTDIR="$PWD/artifacts"
 make report-linux REPORT_STRICT=1
 ```
 
+### QEMU smoke 测试
+
+正式 Release 和 Source CI 都会重新解压工具链包，并用 QEMU user-mode
+做一次运行测试。测试程序位于 `tests/qemu/`：
+
+- glibc 和 musl：编译并运行静态、动态 C 程序，同时做 C++ 编译检查
+- newlib：做编译和目标 ELF 检查；裸机运行测试需要额外的启动代码和 BSP
+
+可以在本地对已经解压的工具链执行：
+
+```bash
+sudo apt-get install -y qemu-user
+
+bash scripts/check-toolchain-in-qemu.sh \
+  --prefix /path/to/install-toolchain \
+  --mode linux \
+  --compiler gcc
+```
+
+`--mode` 支持 `linux`、`musl` 和 `newlib`。默认使用
+`qemu-loongarch64`，可以通过 `--qemu-user` 指定其他 QEMU 路径。
+
 ## 目录结构
 
 ```text
@@ -164,6 +186,7 @@ make report-linux REPORT_STRICT=1
 ├── Makefile.in                   顶层构建规则
 ├── linux-headers/include/        vendored LoongArch UAPI 头文件
 ├── scripts/                      源码拉取、DejaGNU board、QEMU/awk/sed wrapper
+├── tests/qemu/                   QEMU 发布前 smoke 测试程序
 ├── .github/containers/          glibc 2.28 构建容器
 ├── .github/                      CI 与 runner 辅助脚本
 ├── build-*/                      各组件 out-of-tree 构建目录
@@ -179,7 +202,8 @@ GitHub Actions 使用与本地相同的 `configure` 和 `make` 流程：
 - `.github/workflows/source-ci.yml`：推送或提 PR 到 `main`，且修改了
   `gcc`、`binutils`、`glibc`、`newlib`、`musl`、`llvm` 等 gitlink、
   `.gitmodules` 或源码拉取脚本时自动触发。它按 gitlink 的源码 commit
-  构建六个 GCC 包和六个 GCC+LLVM 包用于验证，但不创建 Release。
+  构建六个 GCC 包和六个 GCC+LLVM 包，并运行对应的 QEMU smoke 测试；
+  但不创建 Release。
 - `.github/workflows/nightly-release.yml`：每天 00:00 UTC（北京时间 08:00）
   检查默认分支最近一次 commit。最近 24 小时内有提交时，重新构建六个 GCC
   包和六个 GCC+LLVM 包，并发布 `nightly-YYYY.MM.DD` 预发布 Release；没有
@@ -189,9 +213,9 @@ GitHub Actions 使用与本地相同的 `configure` 和 `make` 流程：
   glibc 2.28 容器中按该 tag 的 gitlink 构建六个 GCC 包和六个 GCC+LLVM 包：
   x86_64/aarch64 × newlib/glibc/musl。LLVM 使用独立的 `build-llvm` job，
   复用同一矩阵的 GCC 包，只补编译 LLVM。发布前分别在 x86_64 和 aarch64
-  runner 上重新解压并检查对应架构的 GCC 和 Clang；每个包都包含许可证和源码
-  信息，Release 页面也会附带 `LICENSE`、`THIRD_PARTY_NOTICES.md` 和
-  `SHA256SUMS`。
+  runner 上重新解压并检查对应架构的 GCC 和 Clang，再用 QEMU user-mode
+  运行 glibc/musl smoke 程序；每个包都包含许可证和源码信息，Release 页面
+  也会附带 `LICENSE`、`THIRD_PARTY_NOTICES.md` 和 `SHA256SUMS`。
 - `.github/workflows/build.yml`：仅供手动开发验证，保留 Ubuntu 22.04/24.04
   的普通宿主构建、LLVM 和 QEMU/testsuite 能力；不参与正式发布。
 - `.github/workflows/llvm-smoke.yml`：手动运行的单行矩阵 LLVM 验证。它只在

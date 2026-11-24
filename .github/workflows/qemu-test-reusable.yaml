@@ -1,0 +1,94 @@
+name: QEMU Test Reusable
+
+on:
+  workflow_call:
+    inputs:
+      artifact-name:
+        description: "Artifact suffix: release or ci"
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  qemu-test:
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-24.04
+            host_arch: x86_64
+          - runner: ubuntu-24.04-arm
+            host_arch: aarch64
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - name: Checkout QEMU test files
+        uses: actions/checkout@v4
+        with:
+          sparse-checkout: |
+            scripts/check-toolchain-in-qemu.sh
+            tests/qemu/smoke.c
+            tests/qemu/smoke.cpp
+            tests/qemu/newlib-smoke.c
+          sparse-checkout-cone-mode: false
+
+      - name: Install QEMU user-mode
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends qemu-user
+          qemu-loongarch64 --version | tee qemu-version.txt
+
+      - name: Download ${{ matrix.host_arch }} artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: 'loongarch64-*-${{ matrix.host_arch }}-host-glibc228*-${{ inputs.artifact-name }}'
+          path: artifacts
+          merge-multiple: true
+
+      - name: Check ${{ matrix.host_arch }} artifact count
+        shell: bash
+        run: |
+          set -euo pipefail
+          count="$(find artifacts -maxdepth 1 -type f -name '*.tar.xz' | wc -l)"
+          echo "QEMU test archive count for ${{ matrix.host_arch }}: $count"
+          test "$count" -eq 6
+
+      - name: Run ${{ matrix.host_arch }} QEMU smoke tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          host_arch='${{ matrix.host_arch }}'
+          artifact_name='${{ inputs.artifact-name }}'
+          for mode in elf glibc musl; do
+            case "$mode" in
+              elf)   script_mode=newlib; triple=loongarch64-unknown-elf ;;
+              glibc) script_mode=linux;  triple=loongarch64-unknown-linux-gnu ;;
+              musl)  script_mode=musl;   triple=loongarch64-unknown-linux-musl ;;
+            esac
+            for compiler in gcc llvm; do
+              base="loongarch64-${mode}-${host_arch}-host-glibc228"
+              [[ "$mode" == glibc ]] && base+="-target-glibc236"
+              [[ "$compiler" == llvm ]] && base+="-llvm"
+              archive="artifacts/${base}-${artifact_name}.tar.xz"
+              test -f "$archive"
+
+              tmpdir="$(mktemp -d)"
+              mkdir -p "$tmpdir/root"
+              tar xJf "$archive" -C "$tmpdir/root"
+              prefix="$(find "$tmpdir/root" -mindepth 1 -maxdepth 1 -type d -print -quit)"
+              test -n "$prefix"
+
+              bash scripts/check-toolchain-in-qemu.sh \
+                --prefix "$prefix" \
+                --mode "$script_mode" \
+                --triple "$triple" \
+                --compiler "$compiler"
+
+              echo "QEMU smoke passed: ${base}-${artifact_name}.tar.xz"
+              rm -rf "$tmpdir"
+            done
+          done
