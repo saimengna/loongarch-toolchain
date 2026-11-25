@@ -142,12 +142,18 @@ jobs:
               newlib, glibc, and musl targets, in GCC-only and GCC+LLVM variants
             - Built fresh in this nightly workflow run; Source CI artifacts are
               not reused
-            - Source revisions are recorded in `VERSIONS.txt` in every archive
-              and fixed by the submodule gitlinks at commit `${{ github.sha }}`
+            - **Corresponding source**: upstream revisions are recorded in
+              `VERSIONS.txt` and `SOURCE-OFFER.txt` in every archive. The build
+              scripts are this repository at commit `${{ github.sha }}`:
+              https://github.com/${{ github.repository }}/tree/${{ github.sha }}
+              The source is available for as long as these binaries are
+              distributed.
             - This is a prerelease, not the stable `v*` release
             - Verify downloads with `sha256sum -c SHA256SUMS`
           files: |
             LICENSE
+            LICENSE.LGPL-2.1
+            LICENSE.GPL-2.0
             THIRD_PARTY_NOTICES.md
             artifacts/*.tar.xz
             artifacts/SHA256SUMS

@@ -260,6 +260,9 @@ jobs:
           - ${{ inputs.build-sim }}
     env:
       smcache_key: ${{ needs.submodule-cache.outputs.key }}
+      SOURCE_TAG: ${{ github.ref_name }}
+      SOURCE_COMMIT: ${{ github.sha }}
+      SOURCE_REPO: ${{ github.repository }}
     steps:
       - uses: actions/checkout@v4
 
@@ -445,6 +448,9 @@ jobs:
             -e BUILDER_IMAGE="$image" \
             -e CI_COMPILER='${{ matrix.compiler }}' \
             -e CI_PREBUILT_GNU='${{ inputs.use-prebuilt-gnu }}' \
+            -e SOURCE_TAG="$SOURCE_TAG" \
+            -e SOURCE_COMMIT="$SOURCE_COMMIT" \
+            -e SOURCE_REPO="$SOURCE_REPO" \
             -v "$GITHUB_WORKSPACE:$GITHUB_WORKSPACE" \
             -w "$GITHUB_WORKSPACE" \
             "$image" \

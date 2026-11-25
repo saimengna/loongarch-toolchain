@@ -264,10 +264,12 @@ GitHub Actions 使用与本地相同的 `configure` 和 `make` 流程：
    `Release` workflow 构建并发布六个 glibc 2.28 GCC 包和六个 GCC+LLVM 包。
 
 构建出来的宿主二进制只要求 glibc 2.28+；`newlib` 和 `musl` 目标本身不使用
-glibc。所有归档都包含 `LICENSE`、`THIRD_PARTY_NOTICES.md`、`VERSIONS.txt`，
-其中 `VERSIONS.txt` 记录实际源码 commit；`BUILD-INFO.txt` 记录
-宿主架构、glibc 上限和目标库。正式 Release 还会提供 `SHA256SUMS`，下载后
-可在同一目录执行 `sha256sum -c SHA256SUMS`。
+glibc。所有归档都包含 `LICENSE`、`LICENSE.LGPL-2.1`、`LICENSE.GPL-2.0`、
+`THIRD_PARTY_NOTICES.md`、`SOURCE-OFFER.txt`、`VERSIONS.txt`。
+`SOURCE-OFFER.txt` 给出各组件精确 revision 和源码获取地址；
+`VERSIONS.txt` 同时记录上游组件、本仓库 commit 和 tag；`BUILD-INFO.txt`
+记录宿主架构、glibc 上限和目标库。正式 Release 还会提供 `SHA256SUMS`，
+下载后可在同一目录执行 `sha256sum -c SHA256SUMS`。
 
 CI 构建的包还会在 `lib/` 中附带 glibc 2.28 构建镜像使用的
 `libmpfr.so.4`、`libmpc.so.3`、`libgmp.so.10`，并给宿主 ELF 写入基于

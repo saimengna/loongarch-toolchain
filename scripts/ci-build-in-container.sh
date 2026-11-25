@@ -193,6 +193,9 @@ file /tmp/loongarch-smoke.o | grep -qi loongarch
 # in the builder image.
 bash scripts/bundle-host-libs.sh --prefix "$PREFIX" --copy-only
 
+if [[ -f "$PREFIX/VERSIONS.txt" ]]; then
+  cp "$PREFIX/VERSIONS.txt" versions.txt
+fi
 make versions
 cp versions.txt "$PREFIX/VERSIONS.txt"
 cat > "$PREFIX/BUILD-INFO.txt" <<EOF

@@ -6,7 +6,8 @@ licensed under the GNU General Public License, version 3. See `LICENSE`.
 It also contains or consumes third-party material. The license and copyright
 notices in the original files and upstream repositories control those files.
 This document is a summary, not a replacement for those notices.
-It is copied into each packaged toolchain together with `LICENSE` and the
+It is copied into each packaged toolchain together with `LICENSE`,
+`LICENSE.LGPL-2.1`, `LICENSE.GPL-2.0`, `SOURCE-OFFER.txt`, and the
 corresponding `VERSIONS.txt`.
 
 ## Linux UAPI headers
@@ -60,10 +61,22 @@ The CI-produced toolchain archives also include runtime copies of GMP, MPFR,
 and MPC shared libraries from the glibc-2.28 builder image. Their copyright and
 license notices remain with the upstream projects.
 
+## Source availability
+
+Every packaged toolchain contains `SOURCE-OFFER.txt`. It records the exact
+upstream revisions, the build scripts revision, and the URL where the
+Corresponding Source can be obtained. `VERSIONS.txt` records the same
+revisions together with the toolchain repository commit and tag.
+
+The current release matrix does not include GDB. If GDB is added to a future
+package, it is covered by the same GPLv3 source-availability statement.
+
 Some optional components, such as uClibc-ng and Picolibc, are not currently
 part of the supported release matrix. If they are added later, their own
 licenses must be included in this notice.
 
-Always check the license files in the exact upstream revision recorded by the
-submodule gitlinks and by `VERSIONS.txt`, and in each component's source tree,
-before distributing source or binary artifacts.
+The exact upstream revision is recorded by the submodule gitlinks, by
+`VERSIONS.txt`, and by `SOURCE-OFFER.txt`. When distributing source or binary
+artifacts, check the license files in that exact revision and in each
+component's source tree. The GPLv3 and LGPLv2.1 texts are included in the
+package so recipients do not need to fetch them separately.

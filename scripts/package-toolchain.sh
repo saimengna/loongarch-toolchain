@@ -124,7 +124,10 @@ if [[ "$STRIP" == 1 ]]; then
 fi
 
 # Legal notices and source revision information must travel with the binaries.
-for notice in LICENSE THIRD_PARTY_NOTICES.md; do
+bash "$REPO_ROOT/scripts/gen-source-offer.sh" \
+  --prefix "$PREFIX" --mode "$MODE" --output "$PREFIX/SOURCE-OFFER.txt"
+
+for notice in LICENSE LICENSE.LGPL-2.1 LICENSE.GPL-2.0 THIRD_PARTY_NOTICES.md; do
   [[ -f "$REPO_ROOT/$notice" ]] && cp "$REPO_ROOT/$notice" "$PREFIX/$notice"
 done
 rm -f "$PREFIX/SOURCES.lock"

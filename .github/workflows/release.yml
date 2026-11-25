@@ -116,8 +116,25 @@ jobs:
               tar xJf "$archive" -C "$tmpdir/root"
               prefix="$(find "$tmpdir/root" -mindepth 1 -maxdepth 1 -type d -print -quit)"
               test -f "$prefix/LICENSE"
+              test -f "$prefix/LICENSE.LGPL-2.1"
+              test -f "$prefix/LICENSE.GPL-2.0"
               test -f "$prefix/THIRD_PARTY_NOTICES.md"
               test -f "$prefix/VERSIONS.txt"
+              test -f "$prefix/SOURCE-OFFER.txt"
+              awk -v s="$GITHUB_SHA" '$1 == "toolchain" && $2 == s { found = 1 } END { exit !found }' "$prefix/VERSIONS.txt"
+              grep -q 'Corresponding Source' "$prefix/SOURCE-OFFER.txt"
+              grep -q "$GITHUB_SHA" "$prefix/SOURCE-OFFER.txt"
+              grep -Eq '^  gcc +[0-9a-f]{40}$' "$prefix/SOURCE-OFFER.txt"
+              grep -Eq '^  binutils +[0-9a-f]{40}$' "$prefix/SOURCE-OFFER.txt"
+              if grep -q 'unknown' "$prefix/SOURCE-OFFER.txt"; then
+                echo "SOURCE-OFFER.txt contains unknown revisions" >&2
+                exit 1
+              fi
+              case "$mode" in
+                glibc) grep -Eq '^  glibc +[0-9a-f]{40}$' "$prefix/SOURCE-OFFER.txt" ;;
+                musl)  grep -Eq '^  musl +[0-9a-f]{40}$' "$prefix/SOURCE-OFFER.txt" ;;
+                elf)   grep -Eq '^  newlib +[0-9a-f]{40}$' "$prefix/SOURCE-OFFER.txt" ;;
+              esac
               for lib in libmpfr.so.4 libmpc.so.3 libgmp.so.10; do
                 test -e "$prefix/lib/${lib}" || { echo "missing bundled $lib" >&2; exit 1; }
               done
@@ -278,11 +295,18 @@ jobs:
             - GDB and the full GCC testsuite are not included
             - License and third-party notices are included in every archive
               and attached to this release
-            - Source revisions are recorded in `VERSIONS.txt` in every archive
-              and are fixed by the submodule gitlinks in this tagged commit
+            - **Corresponding source**: upstream revisions are recorded in
+              `VERSIONS.txt` and `SOURCE-OFFER.txt` in every archive. The build
+              scripts are this repository at commit
+              `${{ github.sha }}` (tag `${{ github.ref_name }}`):
+              https://github.com/${{ github.repository }}/tree/${{ github.sha }}
+              The source remains available for as long as these binaries are
+              distributed.
             - Verify downloads with `sha256sum -c SHA256SUMS`
           files: |
             LICENSE
+            LICENSE.LGPL-2.1
+            LICENSE.GPL-2.0
             THIRD_PARTY_NOTICES.md
             artifacts/*.tar.xz
             artifacts/SHA256SUMS
