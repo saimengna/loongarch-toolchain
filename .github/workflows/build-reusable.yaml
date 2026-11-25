@@ -39,6 +39,18 @@ on:
         description: "Run tests and print reports"
         type: boolean
         default: true
+      regression-suite:
+        description: "Run Tier 2 regression suite: p0 or empty"
+        type: string
+        default: ""
+      package-artifacts:
+        description: "Create toolchain archives"
+        type: boolean
+        default: true
+      upload-artifacts:
+        description: "Upload toolchain archives"
+        type: boolean
+        default: true
       gdb:
         description: "Build GDB"
         type: boolean
@@ -100,6 +112,9 @@ jobs:
           echo "languages: ${{ inputs.languages }}"
           echo "strip:     ${{ inputs.strip }}"
           echo "report:    ${{ inputs.report }}"
+          echo "regression: ${{ inputs.regression-suite }}"
+          echo "package:   ${{ inputs.package-artifacts }}"
+          echo "upload:    ${{ inputs.upload-artifacts }}"
           echo "build-sim: ${{ inputs.build-sim }}"
           echo "builder:   ${{ inputs.builder-image-repository }}:${{ inputs.builder-image-tag }}"
           echo "host glibc max:   ${{ inputs.host-glibc-max }}"
@@ -146,6 +161,33 @@ jobs:
             echo "builder-image path does not support GDB, QEMU, or reports"
             exit 1
           fi
+          if [[ '${{ inputs.regression-suite }}' != '' ]]; then
+            echo "builder-image path does not support Tier 2 regression"
+            exit 1
+          fi
+
+      - name: Validate Tier 2 regression request
+        if: ${{ inputs.regression-suite != '' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          case '${{ inputs.regression-suite }}' in
+            p0) ;;
+            *) echo "unsupported regression suite: ${{ inputs.regression-suite }}"; exit 1 ;;
+          esac
+          if [[ '${{ inputs.builder-image-repository }}' != '' ]]; then
+            echo "Tier 2 regression requires builder-image-repository to be empty"
+            exit 1
+          fi
+          compilers="$(echo '${{ inputs.compiler }}' | tr -d '[]\" ')"
+          if [[ "$compilers" != "gcc" ]]; then
+            echo "Tier 2 P0 currently supports GCC only"
+            exit 1
+          fi
+          if [[ '${{ inputs.build-sim }}' != true ]]; then
+            echo "Tier 2 regression requires build-sim: true"
+            exit 1
+          fi
 
   submodule-cache:
     needs: [validate-inputs]
@@ -161,7 +203,7 @@ jobs:
       - name: Generate cache key
         id: keygen
         run: |
-          source_key="$(printf '%s\n' '${{ inputs.mode }}' '${{ inputs.compiler }}' '${{ inputs.gdb }}' '${{ inputs.build-sim }}' '${{ inputs.use-prebuilt-gnu }}' | sha1sum | cut -d' ' -f1)"
+          source_key="$(printf '%s\n' '${{ inputs.mode }}' '${{ inputs.compiler }}' '${{ inputs.gdb }}' '${{ inputs.build-sim }}' '${{ inputs.use-prebuilt-gnu }}' '${{ inputs.regression-suite }}' | sha1sum | cut -d' ' -f1)"
           rev_key="$(git rev-parse HEAD 2>/dev/null || git submodule 2>/dev/null | sha1sum | cut -d' ' -f1)"
           key="smcache-${source_key}-${rev_key}"
           echo "key=$key" >> "$GITHUB_OUTPUT"
@@ -551,6 +593,16 @@ jobs:
         if: ${{ inputs.builder-image-repository == '' && matrix.build-sim }}
         run: make -j"$(nproc)" build-sim
 
+      - name: Run Tier 2 regression
+        if: ${{ inputs.builder-image-repository == '' && inputs.regression-suite != '' }}
+        shell: bash
+        run: |
+          bash scripts/run-tier2-regression.sh \
+            --mode '${{ matrix.mode }}' \
+            --suite '${{ inputs.regression-suite }}' \
+            --prefix /mnt/loongarch \
+            --report-dir "$GITHUB_WORKSPACE/tier2-results"
+
       - name: Run report
         if: |
           inputs.builder-image-repository == ''
@@ -558,7 +610,20 @@ jobs:
           && (matrix.mode == 'linux' || matrix.mode == 'newlib')
           && matrix.compiler == 'gcc'
           && matrix.report == true
+          && inputs.regression-suite == ''
         run: make -j"$(nproc)" report-${{ matrix.mode }}
+
+      - name: Upload Tier 2 reports
+        if: ${{ always() && inputs.regression-suite != '' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: tier2-${{ matrix.os }}-${{ matrix.mode }}-${{ github.run_id }}
+          path: |
+            tier2-results/**
+            build-gcc-${{ matrix.mode }}-stage2/gcc/testsuite/**/*.sum
+            build-binutils-linux/**/*.sum
+          if-no-files-found: warn
+          retention-days: 14
 
       - name: Show ccache statistics
         if: ${{ always() && inputs.builder-image-repository == '' }}
@@ -582,11 +647,11 @@ jobs:
           cp versions.txt /mnt/loongarch/VERSIONS.txt
 
       - name: Remove build trees before packaging
-        if: ${{ inputs.builder-image-repository == '' }}
+        if: ${{ inputs.builder-image-repository == '' && inputs.package-artifacts }}
         run: rm -rf build-* stamps install-host-gcc install-newlib-nano
 
       - name: Package unstripped
-        if: ${{ inputs.builder-image-repository == '' && (inputs.strip == 'unstripped' || inputs.strip == 'both') }}
+        if: ${{ inputs.builder-image-repository == '' && inputs.package-artifacts && (inputs.strip == 'unstripped' || inputs.strip == 'both') }}
         run: |
           bash scripts/package-toolchain.sh \
             --prefix /mnt/loongarch \
@@ -595,7 +660,7 @@ jobs:
             --name '${{ steps.names.outputs.unstripped }}'
 
       - name: Package stripped
-        if: ${{ inputs.builder-image-repository == '' && (inputs.strip == 'stripped' || inputs.strip == 'both') }}
+        if: ${{ inputs.builder-image-repository == '' && inputs.package-artifacts && (inputs.strip == 'stripped' || inputs.strip == 'both') }}
         run: |
           bash scripts/package-toolchain.sh \
             --prefix /mnt/loongarch \
@@ -605,7 +670,7 @@ jobs:
             --strip
 
       - name: Upload unstripped artifact
-        if: ${{ inputs.strip == 'unstripped' || inputs.strip == 'both' }}
+        if: ${{ inputs.upload-artifacts && (inputs.strip == 'unstripped' || inputs.strip == 'both') }}
         uses: actions/upload-artifact@v4
         with:
           name: ${{ steps.names.outputs.unstripped }}
@@ -614,7 +679,7 @@ jobs:
           retention-days: 1
 
       - name: Upload stripped artifact
-        if: ${{ inputs.strip == 'stripped' || inputs.strip == 'both' }}
+        if: ${{ inputs.upload-artifacts && (inputs.strip == 'stripped' || inputs.strip == 'both') }}
         uses: actions/upload-artifact@v4
         with:
           name: ${{ steps.names.outputs.stripped }}

@@ -1,0 +1,2 @@
+# Known expected failures for glibc binutils P0.
+# Add reviewed entries as lines like: FAIL: test-name

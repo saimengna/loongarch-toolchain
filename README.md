@@ -65,6 +65,15 @@ make -j"$(nproc)" linux
 make -j"$(nproc)" build-qemu
 ```
 
+在已构建的 Linux 或 musl 工具链上运行 Tier 2 P0 回归：
+
+```bash
+bash scripts/run-tier2-regression.sh \
+  --mode linux \
+  --suite p0 \
+  --prefix "$HOME/loongarch64"
+```
+
 ## 获取或更新源码
 
 子模块没有初始化，或者某个组件目录为空时：
@@ -187,6 +196,7 @@ bash scripts/check-toolchain-in-qemu.sh \
 ├── linux-headers/include/        vendored LoongArch UAPI 头文件
 ├── scripts/                      源码拉取、DejaGNU board、QEMU/awk/sed wrapper
 ├── tests/qemu/                   QEMU 发布前 smoke 测试程序
+├── tests/tier2/                  Tier 2 回归运行测试程序
 ├── .github/containers/          glibc 2.28 构建容器
 ├── .github/                      CI 与 runner 辅助脚本
 ├── build-*/                      各组件 out-of-tree 构建目录
@@ -216,6 +226,11 @@ GitHub Actions 使用与本地相同的 `configure` 和 `make` 流程：
   runner 上重新解压并检查对应架构的 GCC 和 Clang，再用 QEMU user-mode
   运行 glibc/musl smoke 程序；每个包都包含许可证和源码信息，Release 页面
   也会附带 `LICENSE`、`THIRD_PARTY_NOTICES.md` 和 `SHA256SUMS`。
+  Release 还会运行两个独立的 Tier 2 P0 回归 job：`regression-linux` 和
+  `regression-musl`。它们使用 Ubuntu 宿主构建的 GCC、`gcc.target/loongarch`
+  测试、Linux 的 binutils 基础测试，以及 `-O0`/`-O2`/`-Os` 运行测试；
+  `publish` 依赖这两个 job，回归失败时不会发布。P0 基线位于
+  `.github/regression-baseline/`。
 - `.github/workflows/build.yml`：仅供手动开发验证，保留 Ubuntu 22.04/24.04
   的普通宿主构建、LLVM 和 QEMU/testsuite 能力；不参与正式发布。
 - `.github/workflows/llvm-smoke.yml`：手动运行的单行矩阵 LLVM 验证。它只在
