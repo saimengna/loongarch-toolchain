@@ -111,14 +111,54 @@ target_is_loongarch() {
   fi
 }
 
+target_interpreter() {
+  local file="$1"
+  [[ -x "$target_readelf" ]] || die "缺少目标 readelf: $target_readelf"
+  "$target_readelf" -l "$file" \
+    | sed -n '/Requesting program interpreter:/{s/.*: \(.*\)]/\1/p;q;}'
+}
+
+check_runtime_loader() {
+  local binary="$1"
+  local interp loader resolved
+
+  interp="$(target_interpreter "$binary")"
+  [[ -n "$interp" ]] || die "动态程序没有 PT_INTERP"
+  loader="$PREFIX/sysroot$interp"
+
+  if [[ ! -e "$loader" ]]; then
+    echo "动态加载器不存在: $loader" >&2
+    echo "PT_INTERP: $interp" >&2
+    [[ -L "$loader" ]] && echo "符号链接: $(readlink "$loader")" >&2
+    echo "sysroot 中的加载器和 libc：" >&2
+    find "$PREFIX/sysroot" -maxdepth 4 \
+      \( -name 'ld-*.so*' -o -name 'libc.so*' \) \
+      -printf '%M %p -> %l\n' >&2 || true
+    die "目标 sysroot 中缺少程序解释器"
+  fi
+
+  resolved="$(realpath -m "$loader")"
+  case "$resolved" in
+    "$PREFIX/sysroot/"*) ;;
+    *) die "动态加载器解析到 sysroot 之外: $loader -> $resolved" ;;
+  esac
+
+  echo "interpreter: $interp -> $resolved"
+}
+
 run_qemu() {
   local label="$1"
   local binary="$2"
-  shift 2
+  local ld_prefix="$3"
+  shift 3
 
   local output status
   set +e
-  output="$(timeout "$TIMEOUT" "$QEMU_USER" "$@" "$binary" 2>&1)"
+  if [[ -n "$ld_prefix" ]]; then
+    output="$(QEMU_LD_PREFIX="$ld_prefix" timeout "$TIMEOUT" "$QEMU_USER" "$@" "$binary" 2>&1)"
+  else
+    output="$(env -u QEMU_LD_PREFIX timeout "$TIMEOUT" "$QEMU_USER" "$@" "$binary" 2>&1)"
+  fi
   status=$?
   set -e
 
@@ -155,7 +195,8 @@ command -v "$QEMU_USER" >/dev/null 2>&1 || die "找不到 QEMU: $QEMU_USER"
 
 env -u LD_LIBRARY_PATH "$cc" "${common_flags[@]}" -O2 "$C_SOURCE" -o "$tmpdir/smoke-dynamic"
 target_is_loongarch "$tmpdir/smoke-dynamic" || die "动态 C 程序不是 LoongArch"
-run_qemu "动态 C 程序" "$tmpdir/smoke-dynamic" -L "$PREFIX/sysroot"
+check_runtime_loader "$tmpdir/smoke-dynamic"
+run_qemu "动态 C 程序" "$tmpdir/smoke-dynamic" "$PREFIX/sysroot" -L "$PREFIX/sysroot"
 
 if [[ "$RUN_STATIC" == auto ]]; then
   [[ "$COMPILER" == gcc ]] && RUN_STATIC=1 || RUN_STATIC=0
@@ -164,7 +205,7 @@ fi
 if [[ "$RUN_STATIC" == 1 ]]; then
   env -u LD_LIBRARY_PATH "$cc" "${common_flags[@]}" -O2 -static "$C_SOURCE" -o "$tmpdir/smoke-static"
   target_is_loongarch "$tmpdir/smoke-static" || die "静态 C 程序不是 LoongArch"
-  run_qemu "静态 C 程序" "$tmpdir/smoke-static"
+  run_qemu "静态 C 程序" "$tmpdir/smoke-static" ""
 fi
 
 if [[ -f "$CXX_SOURCE" && -x "$cxx" ]]; then

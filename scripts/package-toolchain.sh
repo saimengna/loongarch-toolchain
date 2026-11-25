@@ -35,7 +35,43 @@ done
 
 [[ -n "$PREFIX" ]] || { usage; exit 1; }
 [[ -d "$PREFIX" ]] || { echo "安装目录不存在: $PREFIX" >&2; exit 1; }
+PREFIX="$(cd "$PREFIX" && pwd -P)"
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+
+normalize_internal_symlinks() {
+  local link target resolved
+
+  while IFS= read -r -d '' link; do
+    target="$(readlink "$link")"
+    if [[ "$target" == /* ]]; then
+      case "$target" in
+        "$PREFIX"/*)
+          resolved="$(realpath -m --relative-to="$(dirname "$link")" "$target")"
+          ln -sfn "$resolved" "$link"
+          target="$resolved"
+          ;;
+        *)
+          echo "包内绝对符号链接指向安装目录之外: $link -> $target" >&2
+          return 1
+          ;;
+      esac
+    fi
+
+    [[ -e "$link" ]] || {
+      echo "包内存在悬空符号链接: $link -> $target" >&2
+      return 1
+    }
+
+    resolved="$(realpath -m "$link")"
+    case "$resolved" in
+      "$PREFIX/"*) ;;
+      *)
+        echo "包内符号链接解析到安装目录之外: $link -> $resolved" >&2
+        return 1
+        ;;
+    esac
+  done < <(find "$PREFIX" -type l -print0)
+}
 
 case "$MODE" in
   newlib) LABEL="elf" ;;
@@ -96,6 +132,8 @@ rm -f "$PREFIX/SOURCES.lock"
 if [[ -x "$(dirname "$0")/../.github/dedup-dir.sh" ]]; then
   "$(dirname "$0")/../.github/dedup-dir.sh" "$PREFIX" || true
 fi
+
+normalize_internal_symlinks
 
 mkdir -p "$OUTDIR"
 XZ_OPT="-e -T0" tar cJf "$OUTDIR/${NAME}.tar.xz" \

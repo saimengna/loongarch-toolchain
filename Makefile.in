@@ -868,6 +868,11 @@ stamps/build-musl-linux: $(MUSL_SRCDIR) $(MUSL_SRC_GIT) stamps/build-gcc-musl-st
 	$(MAKE) -C $(notdir $@)
 	mkdir -p $(SYSROOT)
 	+flock $(SYSROOT)/.lock $(MAKE) -C $(notdir $@) install
+	for ldso in $(SYSROOT)/lib/ld-musl-*.so.1; do \
+		if [ -L "$$ldso" ]; then \
+			ln -sfn "$$(basename "$$(readlink "$$ldso")")" "$$ldso"; \
+		fi; \
+	done
 	mkdir -p $(dir $@) && touch $@
 
 stamps/build-gcc-musl-stage2: ENABLED_LANGUAGES?="c,c++"
