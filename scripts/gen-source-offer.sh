@@ -11,7 +11,7 @@ usage() {
 用法: scripts/gen-source-offer.sh --prefix DIR --mode MODE --output FILE
 
   --prefix DIR   工具链安装目录
-  --mode MODE    newlib / linux / musl / uclibc
+  --mode MODE    newlib / linux / musl
   --output FILE  生成的源码提供声明
 
 环境变量（可选）:
@@ -115,7 +115,6 @@ component_license() {
     musl)     echo "MIT" ;;
     newlib)   echo "BSD-style and other permissive notices" ;;
     llvm)     echo "Apache-2.0 WITH LLVM-exception" ;;
-    uclibc-ng) echo "LGPL-2.1-or-later" ;;
     *)        echo "see THIRD_PARTY_NOTICES.md" ;;
   esac
 }
@@ -135,8 +134,6 @@ component_url() {
       echo "https://github.com/loongson/newlib/tree/${sha}" ;;
     llvm)
       echo "https://github.com/llvm/llvm-project/tree/${sha}" ;;
-    uclibc-ng)
-      echo "https://github.com/wbx-github/uclibc-ng/tree/${sha}" ;;
     *)
       echo "$source_url" ;;
   esac
@@ -170,7 +167,6 @@ case "$MODE" in
   linux)  lgpl_components+=(glibc) ;;
   musl)   other_components+=(musl) ;;
   newlib) other_components+=(newlib) ;;
-  uclibc) other_components+=(uclibc-ng) ;;
 esac
 
 if has_bin '*-clang'; then

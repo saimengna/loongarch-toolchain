@@ -7,7 +7,6 @@ scripts/wrapper/awk/awk
 scripts/wrapper/sed/sed
 
 # Build products. Component sources are tracked as git submodules.
-/uclibc-ng/
 /build-*/
 /stamps/
 /install-*/

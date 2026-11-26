@@ -13,7 +13,7 @@ usage() {
 用法: scripts/package-toolchain.sh --prefix DIR --mode newlib|linux|musl [选项]
 
   --prefix DIR   工具链安装目录
-  --mode MODE    newlib / linux / musl / uclibc
+  --mode MODE    newlib / linux / musl
   --outdir DIR   输出目录(默认当前目录)
   --name NAME    输出文件名(不含 .tar.xz)
   --strip        生成 stripped 包
@@ -77,8 +77,7 @@ case "$MODE" in
   newlib) LABEL="elf" ;;
   linux)  LABEL="glibc" ;;
   musl)   LABEL="musl" ;;
-  uclibc) LABEL="uclibc-ng" ;;
-  *) echo "mode 必须是 newlib/linux/musl/uclibc" >&2; exit 1 ;;
+  *) echo "mode 必须是 newlib/linux/musl" >&2; exit 1 ;;
 esac
 
 HOST_ARCH="$(uname -m)"

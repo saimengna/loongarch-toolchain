@@ -4,7 +4,7 @@ set -euo pipefail
 
 srcdir="$(cd "$(dirname "$0")/.." && pwd)"
 out="${1:-$PWD/versions.txt}"
-components=(binutils gcc gdb glibc newlib musl uclibc-ng qemu llvm)
+components=(binutils gcc gdb glibc newlib musl qemu llvm)
 
 declare -A dirs=(
   [binutils]="${BINUTILS_SRCDIR:-$srcdir/binutils}"
@@ -13,7 +13,6 @@ declare -A dirs=(
   [glibc]="${GLIBC_SRCDIR:-$srcdir/glibc}"
   [newlib]="${NEWLIB_SRCDIR:-$srcdir/newlib}"
   [musl]="${MUSL_SRCDIR:-$srcdir/musl}"
-  [uclibc-ng]="${UCLIBC_SRCDIR:-$srcdir/uclibc-ng}"
   [qemu]="${QEMU_SRCDIR:-$srcdir/qemu}"
   [llvm]="${LLVM_SRCDIR:-$srcdir/llvm}"
 )

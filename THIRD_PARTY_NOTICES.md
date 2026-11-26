@@ -71,7 +71,7 @@ revisions together with the toolchain repository commit and tag.
 The current release matrix does not include GDB. If GDB is added to a future
 package, it is covered by the same GPLv3 source-availability statement.
 
-Some optional components, such as uClibc-ng and Picolibc, are not currently
+Some optional components, such as Picolibc, are not currently
 part of the supported release matrix. If they are added later, their own
 licenses must be included in this notice.
 

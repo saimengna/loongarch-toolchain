@@ -10,7 +10,6 @@ BINUTILS_SRCDIR := @with_binutils_src@
 NEWLIB_SRCDIR := @with_newlib_src@
 GLIBC_SRCDIR := @with_glibc_src@
 MUSL_SRCDIR := @with_musl_src@
-UCLIBC_SRCDIR := @with_uclibc_src@
 LINUX_HEADERS_SRCDIR := @with_linux_headers_src@
 GDB_SRCDIR := @with_gdb_src@
 QEMU_SRCDIR := @with_qemu_src@
@@ -138,7 +137,6 @@ make_tuple = loongarch$(1)-unknown-$(2)
 LINUX_TUPLE  ?= $(call make_tuple,$(XLEN),linux-gnu)
 NEWLIB_TUPLE ?= $(call make_tuple,$(XLEN),elf)
 MUSL_TUPLE ?= $(call make_tuple,$(XLEN),linux-musl)
-UCLIBC_TUPLE ?= $(call make_tuple,$(XLEN),linux-uclibc)
 MULTILIB_DIR_FOR_TARGET ?= $(if $(filter 32,$(XLEN)),lib32,lib64)
 
 # When MULTILIB_GEN specifies code model variants (--cmodel), omit the global
@@ -184,10 +182,6 @@ MUSL_TARGET_FLAGS := $(MUSL_TARGET_FLAGS_EXTRA)
 MUSL_CC_FOR_TARGET ?= $(MUSL_TUPLE)-gcc
 MUSL_CXX_FOR_TARGET ?= $(MUSL_TUPLE)-g++
 
-UCLIBC_TARGET_FLAGS := $(UCLIBC_TARGET_FLAGS_EXTRA)
-UCLIBC_CC_FOR_TARGET ?= $(UCLIBC_TUPLE)-gcc
-UCLIBC_CXX_FOR_TARGET ?= $(UCLIBC_TUPLE)-g++
-
 LLVM_CC_FOR_TARGET ?= $(INSTALL_DIR)/bin/clang
 LLVM_CXX_FOR_TARGET ?= $(INSTALL_DIR)/bin/clang++
 
@@ -203,12 +197,10 @@ endif
 newlib: stamps/build-gcc-newlib-stage2
 linux: stamps/build-gcc-linux-stage2
 musl: stamps/build-gcc-musl-stage2
-uclibc: stamps/build-gcc-uclibc-stage2
 ifeq (@enable_gdb@,--enable-gdb)
 newlib: stamps/build-gdb-newlib
 linux: stamps/build-gdb-linux
 musl: stamps/build-gdb-musl
-uclibc: stamps/build-gdb-uclibc
 endif
 ifeq (@enable_llvm@,--enable-llvm)
 all: stamps/build-llvm-@default_target@
@@ -304,12 +296,6 @@ else
 MUSL_SRC_GIT :=
 endif
 
-ifeq ($(findstring $(srcdir),$(UCLIBC_SRCDIR)),$(srcdir))
-UCLIBC_SRC_GIT := $(UCLIBC_SRCDIR)/.git
-else
-UCLIBC_SRC_GIT :=
-endif
-
 ifeq ($(findstring $(srcdir),$(QEMU_SRCDIR)),$(srcdir))
 QEMU_SRC_GIT := $(QEMU_SRCDIR)/.git
 else
@@ -334,7 +320,7 @@ endif
 #   * 目录为空 / 只剩 .git 空壳            -> 初始化子模块，失败再依次尝试备用镜像
 # 具体逻辑与换源表都在 scripts/fetch-sources.sh 里。
 $(srcdir)/gcc $(srcdir)/binutils $(srcdir)/gdb $(srcdir)/glibc \
-$(srcdir)/newlib $(srcdir)/musl $(srcdir)/uclibc-ng $(srcdir)/qemu $(srcdir)/llvm:
+$(srcdir)/newlib $(srcdir)/musl $(srcdir)/qemu $(srcdir)/llvm:
 	mkdir -p $@
 
 $(srcdir)/%/.git:
@@ -352,7 +338,7 @@ versions:
 	GCC_SRCDIR="$(GCC_SRCDIR)" BINUTILS_SRCDIR="$(BINUTILS_SRCDIR)" \
 	GDB_SRCDIR="$(GDB_SRCDIR)" GLIBC_SRCDIR="$(GLIBC_SRCDIR)" \
 	NEWLIB_SRCDIR="$(NEWLIB_SRCDIR)" MUSL_SRCDIR="$(MUSL_SRCDIR)" \
-	UCLIBC_SRCDIR="$(UCLIBC_SRCDIR)" QEMU_SRCDIR="$(QEMU_SRCDIR)" \
+	QEMU_SRCDIR="$(QEMU_SRCDIR)" \
 	LLVM_SRCDIR="$(LLVM_SRCDIR)" \
 	bash $(srcdir)/scripts/record-versions.sh $(builddir)/versions.txt
 
@@ -911,158 +897,6 @@ stamps/build-gcc-musl-stage2: $(GCC_SRCDIR) $(GCC_SRC_GIT) stamps/build-musl-lin
 	$(MAKE) -C $(notdir $@)
 	$(MAKE) -C $(notdir $@) $(INSTALL_TARGET)
 	cp -a $(INSTALL_DIR)/$(MUSL_TUPLE)/lib* $(SYSROOT)
-	mkdir -p $(dir $@) && touch $@
-
-#
-# UCLIBC
-#
-
-stamps/build-binutils-uclibc: $(BINUTILS_SRCDIR) $(BINUTILS_SRC_GIT) $(PREPARATION_STAMP)
-	rm -rf $@ $(notdir $@)
-	mkdir $(notdir $@)
-# CC_FOR_TARGET is required for the ld testsuite.
-	cd $(notdir $@) && CC_FOR_TARGET=$(UCLIBC_CC_FOR_TARGET) $</configure \
-		--target=$(UCLIBC_TUPLE) \
-		$(CONFIGURE_HOST) \
-		--prefix=$(INSTALL_DIR) \
-		--with-sysroot=$(SYSROOT) \
-		--enable-plugins \
-		$(MULTILIB_FLAGS) \
-		@with_guile@ \
-		--disable-werror \
-		--disable-nls \
-		$(BINUTILS_TARGET_FLAGS) \
-		--disable-gdb \
-		--disable-sim \
-		--disable-libdecnumber \
-		--disable-readline \
-		$(WITH_ABI) \
-		$(WITH_ARCH)
-	$(MAKE) -C $(notdir $@)
-	$(MAKE) -C $(notdir $@) $(INSTALL_TARGET)
-	mkdir -p $(dir $@) && touch $@
-
-stamps/build-gdb-uclibc: $(GDB_SRCDIR) $(GDB_SRC_GIT) $(PREPARATION_STAMP)
-	rm -rf $@ $(notdir $@)
-	mkdir $(notdir $@)
-# CC_FOR_TARGET is required for the ld testsuite.
-	cd $(notdir $@) && CC_FOR_TARGET=$(UCLIBC_CC_FOR_TARGET) $</configure \
-		--target=$(UCLIBC_TUPLE) \
-		$(CONFIGURE_HOST) \
-		--prefix=$(INSTALL_DIR) \
-		--with-sysroot=$(SYSROOT) \
-		$(MULTILIB_FLAGS) \
-		@with_guile@ \
-		--disable-werror \
-		--disable-nls \
-		$(GDB_TARGET_FLAGS) \
-		--enable-gdb \
-		--disable-gas \
-		--disable-binutils \
-		--disable-ld \
-		--disable-gold \
-		--disable-gprof
-	$(MAKE) -C $(notdir $@)
-	$(MAKE) -C $(notdir $@) $(INSTALL_TARGET)
-	mkdir -p $(dir $@) && touch $@
-
-stamps/build-gcc-uclibc-stage1: $(GCC_SRCDIR) $(GCC_SRC_GIT) stamps/build-binutils-uclibc \
-                               stamps/build-linux-headers
-	if test -f $</contrib/download_prerequisites && test "@NEED_GCC_EXTERNAL_LIBRARIES@" = "true"; then cd $< && ./contrib/download_prerequisites; fi
-	rm -rf $@ $(notdir $@)
-	mkdir $(notdir $@)
-	cd $(notdir $@) && $</configure \
-		--target=$(UCLIBC_TUPLE) \
-		$(CONFIGURE_HOST) \
-		--prefix=$(INSTALL_DIR) \
-		--without-headers \
-		--disable-shared \
-		--disable-threads \
-		@with_system_zlib@ \
-		--enable-tls \
-		--enable-languages=c \
-		--disable-libatomic \
-		--disable-libmudflap \
-		--disable-libssp \
-		--disable-libquadmath \
-		--disable-libgomp \
-		--disable-nls \
-		--disable-bootstrap \
-		--src=$(gccsrcdir) \
-		$(ENABLE_DEFAULT_PIE) \
-		$(GCC_CHECKING_FLAGS) \
-		--disable-multilib \
-		$(WITH_ABI) \
-		$(WITH_ARCH) \
-		$(WITH_TUNE) \
-		$(WITH_CPU) \
-		$(WITH_MUL_FDIV) \
-		$(GCC_EXTRA_CONFIGURE_FLAGS) \
-		CFLAGS_FOR_TARGET="-O2 $(CFLAGS_FOR_TARGET)" \
-		CXXFLAGS_FOR_TARGET="-O2 $(CXXFLAGS_FOR_TARGET)"
-	$(MAKE) -C $(notdir $@) inhibit-libc=true all-gcc
-	$(MAKE) -C $(notdir $@) inhibit-libc=true $(INSTALL_TARGET)-gcc
-	$(MAKE) -C $(notdir $@) inhibit-libc=true all-target-libgcc
-	$(MAKE) -C $(notdir $@) inhibit-libc=true install-target-libgcc
-	mkdir -p $(dir $@) && touch $@
-
-stamps/build-uclibc: $(UCLIBC_SRCDIR) $(UCLIBC_SRC_GIT) stamps/build-gcc-uclibc-stage1 \
-                     stamps/build-linux-headers
-	rm -rf $@ $(notdir $@)
-	mkdir $(notdir $@)
-	cd $(UCLIBC_SRCDIR) && \
-		$(MAKE) O=$(abspath $(notdir $@)) ARCH=loongarch \
-		CROSS_COMPILE=$(UCLIBC_TUPLE)- \
-		KERNEL_HEADERS=$(SYSROOT)/usr/include \
-		defconfig
-	cd $(UCLIBC_SRCDIR) && \
-		$(MAKE) O=$(abspath $(notdir $@)) ARCH=loongarch \
-		CROSS_COMPILE=$(UCLIBC_TUPLE)- \
-		KERNEL_HEADERS=$(SYSROOT)/usr/include \
-		PREFIX=$(SYSROOT) RUNTIME_PREFIX=/ DEVEL_PREFIX=/usr/ \
-		MULTILIB_DIR=$(MULTILIB_DIR_FOR_TARGET) \
-		all install
-	mkdir -p $(dir $@) && touch $@
-
-stamps/build-gcc-uclibc-stage2: ENABLED_LANGUAGES?="c,c++"
-stamps/build-gcc-uclibc-stage2: $(GCC_SRCDIR) $(GCC_SRC_GIT) stamps/build-uclibc
-	rm -rf $@ $(notdir $@)
-	mkdir $(notdir $@)
-	cd $(notdir $@) && $</configure \
-		--target=$(UCLIBC_TUPLE) \
-		$(CONFIGURE_HOST) \
-		--prefix=$(INSTALL_DIR) \
-		--with-sysroot=$(SYSROOT) \
-		@with_system_zlib@ \
-		--disable-shared \
-		--disable-threads \
-		--disable-libatomic \
-		--enable-tls \
-		--enable-languages=$(ENABLED_LANGUAGES) \
-		--disable-libmudflap \
-		--disable-libssp \
-		--disable-libquadmath \
-		--disable-libgomp \
-		--disable-libitm \
-		--disable-libsanitizer \
-		--disable-nls \
-		--disable-bootstrap \
-		--src=$(gccsrcdir) \
-		$(ENABLE_DEFAULT_PIE) \
-		$(GCC_CHECKING_FLAGS) \
-		--disable-multilib \
-		$(WITH_ABI) \
-		$(WITH_ARCH) \
-		$(WITH_TUNE) \
-		$(WITH_CPU) \
-		$(WITH_MUL_FDIV) \
-		$(GCC_WITH_SPECS) \
-		$(GCC_EXTRA_CONFIGURE_FLAGS) \
-		CFLAGS_FOR_TARGET="-O2 $(CFLAGS_FOR_TARGET)" \
-		CXXFLAGS_FOR_TARGET="-O2 $(CXXFLAGS_FOR_TARGET)"
-	$(MAKE) -C $(notdir $@)
-	$(MAKE) -C $(notdir $@) $(INSTALL_TARGET)
-	cp -a $(INSTALL_DIR)/$(UCLIBC_TUPLE)/lib* $(SYSROOT)
 	mkdir -p $(dir $@) && touch $@
 
 #

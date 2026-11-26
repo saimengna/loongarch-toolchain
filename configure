@@ -598,7 +598,6 @@ with_linux_headers_src
 with_llvm_src
 with_qemu_src
 with_gdb_src
-with_uclibc_src
 with_musl_src
 with_glibc_src
 with_newlib_src
@@ -722,7 +721,6 @@ with_binutils_src
 with_newlib_src
 with_glibc_src
 with_musl_src
-with_uclibc_src
 with_gdb_src
 with_qemu_src
 with_llvm_src
@@ -1421,8 +1419,6 @@ Optional Packages:
                           default
   --with-glibc-src        Set glibc source path, use builtin source by default
   --with-musl-src         Set musl source path, use builtin source by default
-  --with-uclibc-src       Set uclibc source path, use builtin source by
-                          default
   --with-gdb-src          Set gdb source path, use builtin source by default
   --with-qemu-src         Set qemu source path, use builtin source by default
   --with-llvm-src         Set llvm source path, use builtin source by default
@@ -4791,29 +4787,6 @@ fi
 	}
 {
 
-# Check whether --with-uclibc-src was given.
-if test ${with_uclibc_src+y}
-then :
-  withval=$with_uclibc_src;
-else case e in #(
-  e) with_uclibc_src=default
-		 ;;
-esac
-fi
-
-	  if test "x$with_uclibc_src" != xdefault
-then :
-  with_uclibc_src=$with_uclibc_src
-
-else case e in #(
-  e) with_uclibc_src="\$(srcdir)/uclibc-ng"
- ;;
-esac
-fi
-
-	}
-{
-
 # Check whether --with-gdb-src was given.
 if test ${with_gdb_src+y}
 then :
@@ -6055,5 +6028,4 @@ if test -n "$ac_unrecognized_opts" && test "$enable_option_checking" != no; then
   { printf '%s\n' "$as_me:${as_lineno-$LINENO}: WARNING: unrecognized options: $ac_unrecognized_opts" >&5
 printf '%s\n' "$as_me: WARNING: unrecognized options: $ac_unrecognized_opts" >&2;}
 fi
-
 

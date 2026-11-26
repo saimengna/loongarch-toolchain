@@ -15,9 +15,7 @@ musl、qemu 和 llvm 从各自的上游仓库获取，不在本仓库重复存�
 | `linux` | `loongarch64-unknown-linux-gnu` | glibc |
 | `musl` | `loongarch64-unknown-linux-musl` | musl |
 
-`uclibc` 目标仍保留在 Makefile 中，但当前 LoongArch GCC 不支持
-`loongarch64-unknown-linux-uclibc`，因此暂不作为发布目标。Picolibc
-尚未接入。
+Picolibc 尚未接入。
 
 ## 快速开始
 
@@ -124,31 +122,37 @@ tag 指向的同一组 gitlink 构建。实际构建出的组件 commit 会写�
 
 ## 构建目标
 
-| 目标 | 作用 |
-|------|------|
-| `all` | 构建 configure 选中的默认目标 |
-| `newlib` | newlib 裸机工具链 |
-| `linux` | glibc GNU/Linux 工具链 |
-| `musl` | musl GNU/Linux 工具链 |
-| `build-binutils` | 单独构建 binutils |
-| `build-gcc1` / `build-gcc2` | 单独构建 GCC 第一阶段/第二阶段 |
-| `build-libc` | 单独构建当前目标的 C 库 |
-| `build-gdb` | 单独构建 GDB |
-| `build-qemu` / `build-sim` | 构建 QEMU user-mode 模拟器 |
-| `build-llvm` | 构建 LLVM/Clang 工具链 |
-| `check` | 运行当前目标的 GCC 测试 |
-| `check-glibc-linux` | 运行 glibc 自身测试 |
-| `check-gcc-linux` / `check-gcc-newlib` / `check-gcc-musl` | 分别运行三种 C 库的 GCC 测试 |
-| `check-newlib-nano` | 运行 newlib-nano 测试 |
-| `check-binutils-linux` / `check-binutils-newlib` | 运行 binutils/GAS/LD 测试 |
-| `check-gdb-linux` / `check-gdb-newlib` | 运行 GDB 测试 |
-| `report` | 汇总当前目标的测试结果 |
-| `report-linux` / `report-newlib` / `report-musl` | 汇总对应目标的测试结果 |
-| `report-binutils` / `report-gdb` | 单独汇总 binutils 或 GDB 结果 |
-| `package` | 把安装目录打成 `.tar.xz` |
-| `versions` | 记录各组件当前 commit 到 `versions.txt` |
-| `fetch` | 拉取或更新所有组件源码 |
-| `clean` | 删除 `build-*`、`install-*` 和 `stamps` |
+下表列出 Makefile 提供的目标，但它们**不等于当前 CI/Release 都会执行**。
+当前 Source CI 和 Release 构建 newlib/linux/musl 的 GCC 与 GCC+LLVM 包，
+不构建 GDB，也不把 QEMU 打进包；QEMU 只在 Tier 2 回归 job 中临时构建用于测试。
+
+| 目标 | 作用 | 当前 Source CI / Release |
+|------|------|--------------------------|
+| `all` | 构建 configure 选中的默认目标 | 使用具体 stamp target，不直接依赖 `all` |
+| `newlib` / `linux` / `musl` | 三种 C 库工具链 | 全部构建 |
+| `build-binutils` | 单独构建 binutils | 作为工具链一部分构建 |
+| `build-gcc1` / `build-gcc2` | 单独构建 GCC 第一阶段/第二阶段 | 构建 |
+| `build-libc` | 单独构建当前目标的 C 库 | 构建 |
+| `build-gdb` | 单独构建 GDB | **不构建**（CI 使用 `gdb: false`） |
+| `build-qemu` / `build-sim` | 构建 QEMU user-mode 模拟器 | **不打包**；Tier 2 回归会临时构建用于测试 |
+| `build-llvm` | 构建 LLVM/Clang 工具链 | 构建 GCC+LLVM 包时使用 |
+| `check` | 运行当前目标的 GCC 测试 | 不直接调用 |
+| `check-glibc-linux` | 运行 glibc 自身测试 | **不跑** |
+| `check-gcc-linux` / `check-gcc-newlib` / `check-gcc-musl` | 分别运行三种 C 库的 GCC 测试 | Tier 2 当前只跑 linux/musl 的 `gcc.target/loongarch` 子集；newlib 不跑 |
+| `check-newlib-nano` | 运行 newlib-nano 测试 | **不跑** |
+| `check-binutils-linux` / `check-binutils-newlib` | 运行 binutils/GAS/LD 测试 | Tier 2 当前只跑 linux |
+| `check-gdb-linux` / `check-gdb-newlib` | 运行 GDB 测试 | **不跑**（GDB 未构建） |
+| `report` | 汇总当前目标的测试结果 | Tier 2 用 `testsuite-summary` 汇总 |
+| `report-linux` / `report-newlib` / `report-musl` | 汇总对应目标的测试结果 | 不直接调用 |
+| `report-binutils` / `report-gdb` | 单独汇总 binutils 或 GDB 结果 | `report-binutils` 由 Tier 2 汇总替代；`report-gdb` 不跑 |
+| `package` | 把安装目录打成 `.tar.xz` | CI 直接调用 `scripts/package-toolchain.sh` |
+| `versions` | 记录各组件当前 commit 到 `versions.txt` | 使用 |
+| `fetch` | 拉取或更新所有组件源码 | CI 走 `scripts/fetch-sources.sh` |
+| `clean` | 删除 `build-*`、`install-*` 和 `stamps` | 手动使用 |
+
+`build-gdb`、`check-gdb-*`、`report-gdb` 只是可用的 Makefile target，
+不代表当前发布包含 GDB。需要 GDB 时，必须在 configure 时启用 GDB，
+并在本地或单独 workflow 中显式构建。
 
 打包示例：
 
@@ -288,7 +292,6 @@ loongarch64-{elf|glibc|musl}-{x86_64|aarch64}-host-glibc228[-target-glibc236][-l
 ## 注意
 
 - 当前没有加入 Picolibc。
-- uClibc 构建暂不可用，原因是 GCC 没有对应的 LoongArch target triplet。
 - LoongArch 没有 RISC-V 的 Spike/PK，CI 模拟器统一使用 QEMU user-mode。
 - 目前没有搬入 RISC-V 的 Dhrystone 基准和 GDB allowlist；测试报告默认
   打印汇总，可用 `REPORT_STRICT=1` 对意外失败做强校验。
