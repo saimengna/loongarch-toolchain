@@ -132,7 +132,8 @@ done
 rm -f "$PREFIX/SOURCES.lock"
 
 if [[ -x "$(dirname "$0")/../.github/dedup-dir.sh" ]]; then
-  "$(dirname "$0")/../.github/dedup-dir.sh" "$PREFIX" || true
+  "$(dirname "$0")/../.github/dedup-dir.sh" "$PREFIX" ||
+    echo "警告: dedup-dir 返回非零，归档可能没有去重" >&2
 fi
 
 normalize_internal_symlinks
