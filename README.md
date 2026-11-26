@@ -1,302 +1,154 @@
 # loongarch-toolchain
 
-面向 LoongArch 的交叉工具链超级工程，结构参考
-[riscv-gnu-toolchain](https://github.com/riscv-collab/riscv-gnu-toolchain)。
+面向 LoongArch 的 GCC / LLVM 交叉工具链，提供 newlib（裸机）、glibc 和 musl
+三种 C 库，每种都有 GCC 版和 GCC+LLVM 版。
 
-本仓库包含顶层 `configure`、`Makefile.in`、测试脚本、QEMU/DejaGNU
-封装，以及 LoongArch Linux UAPI 头文件。gcc、binutils、glibc、newlib、
-musl、qemu 和 llvm 从各自的上游仓库获取，不在本仓库重复存放源码。
+| 项目 | 说明 |
+|------|------|
+| 目标架构 | `loongarch64-lp64d` |
+| 宿主机 | Linux `x86_64` 或 `aarch64` |
+| 宿主 glibc | 2.28 及以上 |
+| 目标 C 库 | newlib（裸机）/ glibc 2.36 / musl |
+| 编译器 | GCC，或 GCC + LLVM（clang / clang++ / lld） |
 
-## 支持的工具链
+宿主编译器依赖的 glibc 符号版本最高为 2.28，因此在 Ubuntu 20.04、Debian 10、
+AlmaLinux 8 及更新的系统上可以直接运行，不需要设置 `LD_LIBRARY_PATH`。
 
-| target | 三元组 | C 库 |
-|--------|--------|------|
-| `newlib` | `loongarch64-unknown-elf` | newlib（裸机） |
-| `linux` | `loongarch64-unknown-linux-gnu` | glibc |
-| `musl` | `loongarch64-unknown-linux-musl` | musl |
+## 下载
 
+在 [Releases](https://github.com/saimengna/loongarch-toolchain/releases) 页面
+下载对应归档。文件名格式：
 
-## 快速开始
-
-首次克隆：
-
-```bash
-git clone git@github.com:saimengna/loongarch-toolchain.git
-cd loongarch-toolchain
+```text
+loongarch64-{glibc|musl|elf}-{x86_64|aarch64}-host-glibc228[-target-glibc236][-llvm]-release.tar.xz
 ```
 
-源码目录使用真正的 Git submodule。执行 `make` 时会按主仓库记录的
-gitlink commit 自动初始化所需子模块，因此不需要加 `--recursive`。
+- `glibc` → 三元组 `loongarch64-unknown-linux-gnu`
+- `musl` → 三元组 `loongarch64-unknown-linux-musl`
+- `elf` → 三元组 `loongarch64-unknown-elf`（newlib，裸机）
+- `x86_64` / `aarch64` 是宿主架构，必须与你运行编译器的机器一致
+- `-llvm` 表示在 GCC 工具链基础上增加 clang、clang++ 和 lld
+- 发布类型后缀：`-release` 正式版，`-nightly` 每日构建，`-ci` 为 CI 产物
 
-配置并构建 glibc 工具链：
-
-```bash
-./configure --prefix="$HOME/loongarch64" --enable-linux
-make -j"$(nproc)" linux
-```
-
-构建裸机 newlib 工具链：
+校验并解压：
 
 ```bash
-./configure --prefix="$HOME/loongarch64-elf"
-make -j"$(nproc)" newlib
+sha256sum -c SHA256SUMS
+
+mkdir -p ~/loongarch64
+tar xJf loongarch64-glibc-x86_64-host-glibc228-target-glibc236-release.tar.xz \
+  -C ~/loongarch64 --strip-components=1
+export PATH="$HOME/loongarch64/bin:$PATH"
 ```
 
-构建 musl 工具链：
+`--strip-components=1` 用于去掉归档内的 `install-toolchain` 顶层目录。
+
+## 使用
+
+### C / C++（GCC）
 
 ```bash
-./configure --prefix="$HOME/loongarch64-musl" --enable-musl
-make -j"$(nproc)" musl
+cat > hello.c <<'EOF'
+#include <stdio.h>
+
+int main(void) {
+    puts("hello loongarch");
+    return 0;
+}
+EOF
+
+loongarch64-unknown-linux-gnu-gcc hello.c -o hello
+loongarch64-unknown-linux-gnu-gcc -static hello.c -o hello-static
+loongarch64-unknown-linux-gnu-g++ hello.cc -o hello-cpp
+
+loongarch64-unknown-linux-gnu-readelf -h hello | grep Machine
 ```
 
-需要 LLVM/Clang 时在 configure 阶段加 `--enable-llvm`：
+`Machine` 一行应当是 `LoongArch`。
 
-```bash
-./configure --prefix="$HOME/loongarch64" --enable-linux --enable-llvm
-make -j"$(nproc)" linux
-```
-
-内核头文件不在仓库的 `linux-headers/` 下时，可以用
-`--with-linux-headers-src` 指定：
-
-```bash
-./configure --prefix="$HOME/loongarch64" --enable-linux \
-  --with-linux-headers-src=/usr/src/linux
-```
-
-该选项既可以指向内核源码树根，也可以指向其中的 `include` 目录；构建时会把
-对应的 UAPI 头文件安装到 sysroot 的 `usr/include`。
-
-构建 QEMU user-mode 模拟器：
-
-```bash
-make -j"$(nproc)" build-qemu
-```
-
-在已构建的 Linux 或 musl 工具链上运行 Tier 2 P0 回归：
-
-```bash
-bash scripts/run-tier2-regression.sh \
-  --mode linux \
-  --suite p0 \
-  --prefix "$HOME/loongarch64"
-```
-
-默认只跑 P0 门禁；需要额外的完整 binutils/ld 报告时加 `--full-binutils`
-（只报告、不拦截，耗时较长）。QEMU 没有用 `make build-sim` 构建时，脚本
-会直接使用 `PATH` 上的 `qemu-loongarch64`。如果要在容器外对一份 glibc 2.28
-容器构建的树手工跑测试，GCC build tree 里的 `cc1` 依赖随包的
-`libmpfr.so.4`，需要先 `export LD_LIBRARY_PATH="$PREFIX/lib"`；CI 里则是
-回到同一个容器执行，不需要这个变量。
-
-## 获取或更新源码
-
-子模块没有初始化，或者某个组件目录为空时：
-
-```bash
-./configure --prefix="$HOME/loongarch64" --enable-linux
-make fetch
-```
-
-如果还没有生成 Makefile，也可以尝试从备用源拉取，直接运行
-`bash scripts/fetch-sources.sh`。
-
-
-```bash
-make fetch FETCH_ARGS=-f
-```
-
-`-f` 只表示强制重新下载；对于有 gitlink 的组件，仍然会拉取同一个固定
-commit，不会自动改用分支最新提交。
-
-本机连不上 GitHub HTTPS、但 SSH 可用时，可以跳过子模块直接走镜像/SSH：
-
-```bash
-FETCH_USE_SUBMODULE=0 make fetch
-```
-
-源码版本由 submodule gitlink 固定，与 `riscv-gnu-toolchain` 的做法一致。
-Source CI 和 Release 都使用当前 checkout 中记录的 gitlink commit。需要升级
-某个组件时，可以执行：
-
-```bash
-git submodule update --remote gcc
-git -C gcc rev-parse HEAD
-git add gcc
-git commit -m "gcc: update source commit"
-```
-
-注意 `git submodule update --remote` 拉取的是 `.gitmodules` 中 `branch`
-指定的分支最新提交，不是当前固定的 commit；升级时应确认
-`git -C gcc rev-parse HEAD` 的结果符合预期。
-
-提交后 `Source CI` 会按新的 gitlink 构建；打 `v*` tag 时，Release 使用该
-tag 指向的同一组 gitlink 构建。实际构建出的组件 commit 会写入每个包的
-`VERSIONS.txt`。
-
-## 打包与测试
-
-打包示例：
-
-```bash
-make package PACKAGE_MODE=linux PACKAGE_OUTDIR="$PWD/artifacts"
-```
-
-生成的压缩包会包含 `VERSIONS.txt`，记录 gcc、binutils、glibc 等组件的
-实际 commit。
-
-从没有 `.git` 的源码包构建时，`SOURCE-OFFER.txt` 会把本仓库 commit 写成
-`unknown`；正式发布请在 git checkout 中构建，或设置 `SOURCE_COMMIT`。
-
-测试报告默认只打印统计信息。需要“有意外失败就退出非零”时：
-
-```bash
-make report-linux REPORT_STRICT=1
-```
-
-### QEMU smoke 测试
-
-正式 Release 和 Source CI 都会重新解压工具链包，并用 QEMU user-mode
-做一次运行测试。测试程序位于 `tests/qemu/`：
-
-- glibc 和 musl：编译并运行静态、动态 C 程序，同时做 C++ 编译检查
-- newlib：做编译和目标 ELF 检查；裸机运行测试需要额外的启动代码和 BSP
-
-可以在本地对已经解压的工具链执行：
+在 `x86_64` 或 `aarch64` 上运行生成的程序需要 QEMU user-mode：
 
 ```bash
 sudo apt-get install -y qemu-user
-
-bash scripts/check-toolchain-in-qemu.sh \
-  --prefix /path/to/install-toolchain \
-  --mode linux \
-  --compiler gcc
+qemu-loongarch64 -L ~/loongarch64/sysroot ./hello
 ```
 
-`--mode` 支持 `linux`、`musl` 和 `newlib`。默认使用
-`qemu-loongarch64`，可以通过 `--qemu-user` 指定其他 QEMU 路径。
+### LLVM / clang
 
-## 目录结构
+带 `-llvm` 的包同时提供 `clang`、`clang++`、`lld` 和 LLVM 工具，既有不带前缀
+的名字，也有 `<三元组>-clang` 形式的别名：
+
+```bash
+loongarch64-unknown-linux-gnu-clang -mabi=lp64d hello.c -o hello
+loongarch64-unknown-linux-gnu-clang++ -mabi=lp64d hello.cc -o hello-cpp
+llvm-objdump -d hello
+```
+
+### newlib（裸机）
+
+`elf` 包的编译器是 `loongarch64-unknown-elf-gcc`。目标没有操作系统，生成的程序
+需要自己提供启动代码、链接脚本和目标板支持代码才能运行；工具链本身只保证编译和
+链接阶段可用。
+
+### musl
+
+`musl` 包生成静态可执行文件最省事：
+
+```bash
+loongarch64-unknown-linux-musl-gcc -static hello.c -o hello-musl
+```
+
+动态链接的程序要求目标系统上存在 `/lib/ld-musl-loongarch64.so.1`。
+
+## 系统要求
+
+- 宿主：Linux `x86_64` 或 `aarch64`，glibc 2.28 及以上。MPFR / MPC / GMP 已经
+  捆绑在归档的 `lib/` 目录中，无需自行安装。
+- glibc 目标：目标运行时为 glibc 2.36，要求目标内核为 Linux 5.19 或更高
+  （LoongArch 进入主线内核的起始版本）。要在更老的厂商内核（例如 4.19）上运行，
+  需要自行调整 `--enable-kernel` 后重新构建。
+- musl 目标：不依赖 glibc。
+- newlib 目标：裸机，不依赖操作系统。
+
+## 归档内容
 
 ```text
-.
-├── configure / configure.ac      顶层 autoconf 配置
-├── Makefile.in                   顶层构建规则
-├── linux-headers/include/        vendored LoongArch UAPI 头文件
-├── scripts/                      源码拉取、DejaGNU board、QEMU/awk/sed wrapper
-├── tests/qemu/                   QEMU 发布前 smoke 测试程序
-├── tests/tier2/                  Tier 2 回归运行测试程序
-├── .github/containers/          glibc 2.28 构建容器
-├── .github/                      CI 与 runner 辅助脚本
-├── build-*/                      各组件 out-of-tree 构建目录
-├── stamps/                       已完成步骤的 stamp 文件
-├── install-*/                    分阶段安装目录
-└── gcc/ binutils/ gdb/ glibc/ newlib/ musl/ qemu/ llvm/   子模块
+bin/                     编译器、binutils、QEMU 之外的宿主工具
+lib/                     目标库、GCC 运行时，以及捆绑的 MPFR/MPC/GMP
+libexec/gcc/             cc1、cc1plus、lto1 等编译器后端
+sysroot/                 glibc / musl 目标 sysroot（含 libc 和启动文件）
+LICENSE                  GPL-3.0
+LICENSE.LGPL-2.1         部分组件使用的 LGPL-2.1
+LICENSE.GPL-2.0          部分组件使用的 GPL-2.0
+THIRD_PARTY_NOTICES.md   第三方组件版权与许可说明
+VERSIONS.txt             各上游组件的实际 commit
+SOURCE-OFFER.txt         各组件的源码获取地址与本仓库 revision
+BUILD-INFO.txt           宿主架构、glibc 上限、目标和构建镜像信息
 ```
 
-## CI 与发布
+## 从源码构建
 
-GitHub Actions 使用与本地相同的 `configure` 和 `make` 流程：
+本仓库只包含顶层 `configure`、`Makefile.in`、测试脚本和 LoongArch UAPI 头文件，
+gcc、binutils、glibc、newlib、musl、qemu、llvm 通过 submodule 按记录的 commit
+拉取，不需要 `--recursive`。
 
-- `.github/workflows/source-ci.yml`：推送或提 PR 到 `main`，且修改了
-  `gcc`、`binutils`、`glibc`、`newlib`、`musl`、`llvm` 等 gitlink、
-  `.gitmodules` 或源码拉取脚本时自动触发。它按 gitlink 的源码 commit
-  构建六个 GCC 包和六个 GCC+LLVM 包，并运行与 Release 相同的 `verify`
-  验收和 QEMU smoke 测试；glibc 和 musl 包还会在同一个 job 里、打包之前
-  用本次构建出的工具链跑一遍 Tier 2 P0 回归。它不创建 Release，但会明显
-  增加 CI 时间。
-- `.github/workflows/nightly-release.yml`：每天 00:00 UTC（北京时间 08:00）
-  检查默认分支最近一次 commit。最近 24 小时内有提交时，重新构建六个 GCC
-  包和六个 GCC+LLVM 包，并发布 `nightly-YYYY.MM.DD` 预发布 Release；没有
-  近期提交时跳过。手动运行会绕过 24 小时检查，便于测试 nightly 链路。
-  Nightly 使用自己这次 run 的 Artifact，不复用 Source CI 的 Artifact。
-- `.github/workflows/release.yml`：正式发布链路。推送 `v*` tag 时在
-  glibc 2.28 容器中按该 tag 的 gitlink 构建六个 GCC 包和六个 GCC+LLVM 包：
-  x86_64/aarch64 × newlib/glibc/musl。LLVM 使用独立的 `build-llvm` job，
-  复用同一矩阵的 GCC 包，只补编译 LLVM。发布前分别在 x86_64 和 aarch64
-  runner 上重新解压并检查对应架构的 GCC 和 Clang，再用 QEMU user-mode
-  运行 glibc/musl smoke 程序；每个包都包含许可证和源码信息，Release 页面
-  也会附带 `LICENSE`、`THIRD_PARTY_NOTICES.md` 和 `SHA256SUMS`。
-  Tier 2 P0 回归与构建在同一个 job 内完成：容器构建结束、RPATH 补好之后，
-  重新进入同一个 glibc 2.28 容器，用一个只读挂载的静态 qemu 运行
-  `gcc.target/loongarch` 测试、Linux 的 LoongArch 汇编与 objdump 子集，
-  以及 `-O0`/`-O2`/`-Os` 运行测试，通过之后才打包。在容器里跑是必需的：
-  构建树是为 AlmaLinux 8 生成的，runner 上的 dash 和 `libmpfr.so.6` 会直接
-  弄坏 libtool 和 build tree 里的 `cc1`。这样测试的就是最终发布的二进制，
-  不需要再单独构建一份。
-  完整的 binutils/ld 套件默认不跑（只报告、不作为门禁），需要时加
-  `--full-binutils` 手动开启。`build` 失败或回归失败时不会发布。P0 基线
-  位于 `.github/regression-baseline/`。
-- `.github/workflows/build.yml`：仅供手动开发验证，保留 Ubuntu 22.04/24.04
-  的普通宿主构建、LLVM 和 QEMU/testsuite 能力；不参与正式发布。
-- `.github/workflows/llvm-smoke.yml`：手动运行的单行矩阵 LLVM 验证。它只在
-  `ubuntu-24.04` 上构建一个 C 库模式，适合在私有库额度有限时先验证
-  “GCC 产物复用 + LLVM 补构建”链路；不创建 Release。
-- `.github/workflows/builder-image.yml`：仅手动触发，分别在
-  `ubuntu-24.04` 和 `ubuntu-24.04-arm` 上构建
-  `ghcr.io/OWNER/loongarch-builder:glibc228-amd64` 与
-  `ghcr.io/OWNER/loongarch-builder:glibc228-arm64`。镜像基于
-  `manylinux_2_28`，所以编出来的宿主编译器只要求 glibc 2.28+。LLVM 构建
-  需要镜像内的 `cmake`；修改 `.github/containers/glibc228/Dockerfile` 后，
-  必须重新运行该 workflow 并覆盖同名 `glibc228` 标签，否则 LLVM job 仍会
-  使用旧镜像。
+```bash
+git clone https://github.com/saimengna/loongarch-toolchain.git
+cd loongarch-toolchain
 
-正式发布矩阵和 Source CI 都按 submodule gitlink 拉取源码。构建在
-`manylinux_2_28` 容器内完成，因此用户不需要安装 AlmaLinux 或 `manylinux`，
-容器只是构建环境。
-中间构建产物作为 Actions Artifact 只保留 1 天；长期保存以 GitHub Release
-附件为准。
-
-第一次使用请按顺序操作：
-
-1. 在 Actions 里手动运行 `Build glibc 2.28 builder images`。
-2. 修改 gitlink 后推送 `main` 或提交 PR，自动触发按 gitlink 构建的
-   `Source CI`；它会同时运行 `verify` 和 Tier 2 回归。
-3. 如需手动验证普通宿主构建、LLVM 或 QEMU/testsuite，运行 `Build`；
-   私有库额度有限时先运行 `LLVM Smoke` 的 `newlib`，再运行 `linux`。
-4. 需要自动验证夜间构建链路时，手动运行 `Nightly Release`；正式发布仍以
-   `v*` tag 为准。
-5. 发版前更新并提交要发布的 gitlink，再推送 `v0.1.0` 这类 tag，由正式的
-   `Release` workflow 构建并发布六个 glibc 2.28 GCC 包和六个 GCC+LLVM 包。
-
-构建出来的宿主二进制只要求 glibc 2.28+；`newlib` 和 `musl` 目标本身不使用
-glibc。所有归档都包含 `LICENSE`、`LICENSE.LGPL-2.1`、`LICENSE.GPL-2.0`、
-`THIRD_PARTY_NOTICES.md`、`SOURCE-OFFER.txt`、`VERSIONS.txt`。
-`SOURCE-OFFER.txt` 给出各组件精确 revision 和源码获取地址；
-`VERSIONS.txt` 同时记录上游组件、本仓库 commit 和 tag；`BUILD-INFO.txt`
-记录宿主架构、glibc 上限和目标库。正式 Release 还会提供 `SHA256SUMS`，
-下载后可在同一目录执行 `sha256sum -c SHA256SUMS`。
-
-使用 glibc 目标库的程序要求目标内核为 Linux 5.19 或更高（LoongArch 主线
-内核起始版本）；如果需要在更老的厂商内核（例如 4.19）上运行，需要自行
-调整 Makefile 中的 `--enable-kernel` 并重新验证。`newlib` 和 `musl` 目标
-不受此限制。
-
-CI 构建的包还会在 `lib/` 中附带 glibc 2.28 构建镜像使用的
-`libmpfr.so.4`、`libmpc.so.3`、`libgmp.so.10`，并给工具链可执行文件
-（`bin/`、`libexec/gcc/`）写入基于 `$ORIGIN` 的相对 RPATH；这些运行库
-保持原样，不参与 RPATH 改写。用户不需要单独安装这些运行库，也不需要
-设置 `LD_LIBRARY_PATH`。
-
-第三方组件的许可证和版权说明见 `THIRD_PARTY_NOTICES.md`。
-
-产物命名格式：
-
-```text
-loongarch64-{elf|glibc|musl}-{x86_64|aarch64}-host-glibc228[-target-glibc236][-llvm][-release|-nightly|-ci].tar.xz
+./configure --prefix="$HOME/loongarch64" --enable-linux
+make -j"$(nproc)" linux
 ```
 
-## 注意
+其他目标：`make newlib`（`--enable-linux` 换成不传或 `--disable-linux`）、
+`make musl`（`--enable-musl`）、`make build-qemu`。需要 LLVM 时在 configure
+阶段加 `--enable-llvm`。子模块缺失时执行 `make fetch`。
 
-- 当前没有加入 Picolibc。
-- LoongArch 没有 RISC-V 的 Spike/PK，CI 模拟器统一使用 QEMU user-mode。
-- 目前没有搬入 RISC-V 的 Dhrystone 基准和 GDB allowlist；测试报告默认
-  打印汇总，可用 `REPORT_STRICT=1` 对意外失败做强校验。
-- `--enable-llvm` 会显著增加构建时间和磁盘占用；时间紧张时先只构建 GCC。
-- LLVM 需要 Python ≥3.8；系统 `python3` 太旧时用
-  `make LLVM_PYTHON=/path/to/python3 QEMU_PYTHON=/path/to/python3`。
-- 当前正式 Release 包含 GCC 和 GCC+LLVM 两种包，不包含 GDB、QEMU 和
-  testsuite；LLVM 包在同一前缀中保留 GCC、binutils 和目标 C 库，并增加
-  clang/clang++/lld 及 LLVM runtimes。Ubuntu 22.04/24.04 的普通构建仅用于
-  手动验证。`x86_64` 和 `aarch64` 产物不能混用。
-- 子模块提交和 CI 发布流程还需要在第一次真实推送后做一次端到端验证。
+## 许可证与源码
+
+本仓库以 GPL-3.0 发布，详见 `LICENSE`。各上游组件保留自己的许可证，汇总在
+`THIRD_PARTY_NOTICES.md` 中。每个归档的 `VERSIONS.txt` 和 `SOURCE-OFFER.txt`
+记录了构建时使用的精确 revision 和源码地址。
+
+本项目的工程结构参考了
+[riscv-gnu-toolchain](https://github.com/riscv-collab/riscv-gnu-toolchain)。
