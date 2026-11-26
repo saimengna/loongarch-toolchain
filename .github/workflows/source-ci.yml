@@ -23,14 +23,21 @@ on:
       - 'scripts/bundle-host-libs.sh'
       - 'scripts/package-toolchain.sh'
       - 'scripts/gen-source-offer.sh'
+      - 'scripts/run-tier2-regression.sh'
+      - 'scripts/testsuite-summary'
+      - 'scripts/loongarch-sim.exp'
+      - 'scripts/site.exp'
       - 'LICENSE'
       - 'LICENSE.LGPL-2.1'
       - 'LICENSE.GPL-2.0'
       - 'THIRD_PARTY_NOTICES.md'
       - 'tests/qemu/**'
+      - 'tests/tier2/**'
+      - '.github/regression-baseline/**'
       - '.github/workflows/source-ci.yml'
       - '.github/workflows/build-reusable.yaml'
       - '.github/workflows/qemu-test-reusable.yaml'
+      - '.github/workflows/verify-reusable.yaml'
   pull_request:
     branches:
       - main
@@ -52,14 +59,21 @@ on:
       - 'scripts/bundle-host-libs.sh'
       - 'scripts/package-toolchain.sh'
       - 'scripts/gen-source-offer.sh'
+      - 'scripts/run-tier2-regression.sh'
+      - 'scripts/testsuite-summary'
+      - 'scripts/loongarch-sim.exp'
+      - 'scripts/site.exp'
       - 'LICENSE'
       - 'LICENSE.LGPL-2.1'
       - 'LICENSE.GPL-2.0'
       - 'THIRD_PARTY_NOTICES.md'
       - 'tests/qemu/**'
+      - 'tests/tier2/**'
+      - '.github/regression-baseline/**'
       - '.github/workflows/source-ci.yml'
       - '.github/workflows/build-reusable.yaml'
       - '.github/workflows/qemu-test-reusable.yaml'
+      - '.github/workflows/verify-reusable.yaml'
 
 permissions:
   contents: read
@@ -110,8 +124,56 @@ jobs:
       host-glibc-max: "2.28"
       target-glibc-max: "2.36"
 
+  verify:
+    needs: [build, build-llvm]
+    uses: ./.github/workflows/verify-reusable.yaml
+    with:
+      artifact-name: ci
+
   qemu-test:
     needs: [build, build-llvm]
     uses: ./.github/workflows/qemu-test-reusable.yaml
     with:
       artifact-name: ci
+
+  # Tier 2 runs against a separately host-built GCC compiler, exactly like the
+  # Release workflow.  It does not consume the packaged CI artifacts.
+  regression-linux:
+    needs: [build]
+    uses: ./.github/workflows/build-reusable.yaml
+    with:
+      artifact-name: tier2-linux
+      os: '["ubuntu-24.04"]'
+      mode: '["linux"]'
+      target: '["loongarch64-lp64d"]'
+      compiler: '["gcc"]'
+      strip: unstripped
+      report: false
+      gdb: false
+      build-sim: true
+      regression-suite: p0
+      package-artifacts: false
+      upload-artifacts: false
+      builder-image-repository: ''
+      host-glibc-max: "2.28"
+      target-glibc-max: "2.36"
+
+  regression-musl:
+    needs: [build]
+    uses: ./.github/workflows/build-reusable.yaml
+    with:
+      artifact-name: tier2-musl
+      os: '["ubuntu-24.04"]'
+      mode: '["musl"]'
+      target: '["loongarch64-lp64d"]'
+      compiler: '["gcc"]'
+      strip: unstripped
+      report: false
+      gdb: false
+      build-sim: true
+      regression-suite: p0
+      package-artifacts: false
+      upload-artifacts: false
+      builder-image-repository: ''
+      host-glibc-max: "2.28"
+      target-glibc-max: "2.36"

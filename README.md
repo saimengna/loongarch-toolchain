@@ -212,8 +212,9 @@ GitHub Actions 使用与本地相同的 `configure` 和 `make` 流程：
 - `.github/workflows/source-ci.yml`：推送或提 PR 到 `main`，且修改了
   `gcc`、`binutils`、`glibc`、`newlib`、`musl`、`llvm` 等 gitlink、
   `.gitmodules` 或源码拉取脚本时自动触发。它按 gitlink 的源码 commit
-  构建六个 GCC 包和六个 GCC+LLVM 包，并运行对应的 QEMU smoke 测试；
-  但不创建 Release。
+  构建六个 GCC 包和六个 GCC+LLVM 包，并运行与 Release 相同的 `verify`
+  验收和 QEMU smoke 测试；还会运行 Tier 2 P0 的 `regression-linux` 和
+  `regression-musl`。它不创建 Release，但会明显增加 CI 时间。
 - `.github/workflows/nightly-release.yml`：每天 00:00 UTC（北京时间 08:00）
   检查默认分支最近一次 commit。最近 24 小时内有提交时，重新构建六个 GCC
   包和六个 GCC+LLVM 包，并发布 `nightly-YYYY.MM.DD` 预发布 Release；没有
@@ -255,7 +256,7 @@ GitHub Actions 使用与本地相同的 `configure` 和 `make` 流程：
 
 1. 在 Actions 里手动运行 `Build glibc 2.28 builder images`。
 2. 修改 gitlink 后推送 `main` 或提交 PR，自动触发按 gitlink 构建的
-   `Source CI`。
+   `Source CI`；它会同时运行 `verify` 和 Tier 2 回归。
 3. 如需手动验证普通宿主构建、LLVM 或 QEMU/testsuite，运行 `Build`；
    私有库额度有限时先运行 `LLVM Smoke` 的 `newlib`，再运行 `linux`。
 4. 需要自动验证夜间构建链路时，手动运行 `Nightly Release`；正式发布仍以
@@ -281,7 +282,7 @@ CI 构建的包还会在 `lib/` 中附带 glibc 2.28 构建镜像使用的
 产物命名格式：
 
 ```text
-loongarch64-{elf|glibc|musl}-{x86_64|aarch64}-host-glibc228[-target-glibc236][-llvm][-release|-nightly].tar.xz
+loongarch64-{elf|glibc|musl}-{x86_64|aarch64}-host-glibc228[-target-glibc236][-llvm][-release|-nightly|-ci].tar.xz
 ```
 
 ## 注意
