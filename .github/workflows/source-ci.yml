@@ -96,6 +96,7 @@ jobs:
       report: false
       gdb: false
       build-sim: false
+      regression-suite: p0
       builder-image-repository: ghcr.io/${{ github.repository_owner }}/loongarch-builder
       builder-image-tag: glibc228
       host-glibc-max: "2.28"
@@ -135,45 +136,3 @@ jobs:
     uses: ./.github/workflows/qemu-test-reusable.yaml
     with:
       artifact-name: ci
-
-  # Tier 2 runs against a separately host-built GCC compiler, exactly like the
-  # Release workflow.  It does not consume the packaged CI artifacts.
-  regression-linux:
-    needs: [build]
-    uses: ./.github/workflows/build-reusable.yaml
-    with:
-      artifact-name: tier2-linux
-      os: '["ubuntu-24.04"]'
-      mode: '["linux"]'
-      target: '["loongarch64-lp64d"]'
-      compiler: '["gcc"]'
-      strip: unstripped
-      report: false
-      gdb: false
-      build-sim: true
-      regression-suite: p0
-      package-artifacts: false
-      upload-artifacts: false
-      builder-image-repository: ''
-      host-glibc-max: "2.28"
-      target-glibc-max: "2.36"
-
-  regression-musl:
-    needs: [build]
-    uses: ./.github/workflows/build-reusable.yaml
-    with:
-      artifact-name: tier2-musl
-      os: '["ubuntu-24.04"]'
-      mode: '["musl"]'
-      target: '["loongarch64-lp64d"]'
-      compiler: '["gcc"]'
-      strip: unstripped
-      report: false
-      gdb: false
-      build-sim: true
-      regression-suite: p0
-      package-artifacts: false
-      upload-artifacts: false
-      builder-image-repository: ''
-      host-glibc-max: "2.28"
-      target-glibc-max: "2.36"

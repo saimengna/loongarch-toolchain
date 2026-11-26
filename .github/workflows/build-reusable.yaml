@@ -161,10 +161,6 @@ jobs:
             echo "builder-image path does not support GDB, QEMU, or reports"
             exit 1
           fi
-          if [[ '${{ inputs.regression-suite }}' != '' ]]; then
-            echo "builder-image path does not support Tier 2 regression"
-            exit 1
-          fi
 
       - name: Validate Tier 2 regression request
         if: ${{ inputs.regression-suite != '' }}
@@ -175,17 +171,18 @@ jobs:
             p0) ;;
             *) echo "unsupported regression suite: ${{ inputs.regression-suite }}"; exit 1 ;;
           esac
-          if [[ '${{ inputs.builder-image-repository }}' != '' ]]; then
-            echo "Tier 2 regression requires builder-image-repository to be empty"
+          modes="$(echo '${{ inputs.mode }}' | tr -d '[]\" ')"
+          if [[ ",$modes," != *",linux,"* && ",$modes," != *",musl,"* ]]; then
+            echo "Tier 2 P0 supports linux and musl modes only"
             exit 1
           fi
           compilers="$(echo '${{ inputs.compiler }}' | tr -d '[]\" ')"
-          if [[ "$compilers" != "gcc" ]]; then
+          if [[ ",$compilers," != *",gcc,"* ]]; then
             echo "Tier 2 P0 currently supports GCC only"
             exit 1
           fi
-          if [[ '${{ inputs.build-sim }}' != true ]]; then
-            echo "Tier 2 regression requires build-sim: true"
+          if [[ '${{ inputs.builder-image-repository }}' == '' && '${{ inputs.build-sim }}' != true ]]; then
+            echo "Tier 2 regression on the host path requires build-sim: true"
             exit 1
           fi
 
@@ -525,6 +522,41 @@ jobs:
           done
           rm -rf "$tmpdir"
 
+      - name: Install Tier 2 test dependencies
+        if: ${{ inputs.builder-image-repository != '' && inputs.regression-suite != '' && matrix.compiler == 'gcc' && matrix.mode != 'newlib' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          packages=()
+          command -v runtest >/dev/null 2>&1 || packages+=(dejagnu)
+          command -v qemu-loongarch64 >/dev/null 2>&1 || packages+=(qemu-user-static)
+          if (( ${#packages[@]} > 0 )); then
+            sudo apt-get update
+            sudo apt-get install -y "${packages[@]}"
+          fi
+          runtest --version | head -n 1
+          qemu-loongarch64 --version | head -n 1
+
+      # The archive is built once, inside the glibc 2.28 container.  Tier 2
+      # runs on that same build tree on the runner, using the distro QEMU
+      # user-mode emulator, so what is tested is what gets packaged.
+      - name: Run Tier 2 regression on the built toolchain
+        if: ${{ inputs.builder-image-repository != '' && inputs.regression-suite != '' && matrix.compiler == 'gcc' && matrix.mode != 'newlib' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash scripts/run-tier2-regression.sh \
+            --mode '${{ matrix.mode }}' \
+            --suite '${{ inputs.regression-suite }}' \
+            --prefix "$GITHUB_WORKSPACE/install-toolchain" \
+            --report-dir "$GITHUB_WORKSPACE/tier2-results"
+
+      - name: Package glibc 2.28 toolchain
+        if: ${{ inputs.builder-image-repository != '' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          prefix="$GITHUB_WORKSPACE/install-toolchain"
           case '${{ inputs.strip }}' in
             unstripped|both)
               bash scripts/package-toolchain.sh \
@@ -620,7 +652,7 @@ jobs:
         run: make -j"$(nproc)" report-${{ matrix.mode }}
 
       - name: Upload Tier 2 reports
-        if: ${{ always() && inputs.regression-suite != '' }}
+        if: ${{ always() && inputs.regression-suite != '' && matrix.compiler == 'gcc' && matrix.mode != 'newlib' }}
         uses: actions/upload-artifact@v4
         with:
           name: tier2-${{ matrix.os }}-${{ matrix.mode }}-${{ github.run_id }}

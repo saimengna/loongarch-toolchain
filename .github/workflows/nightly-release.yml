@@ -66,6 +66,7 @@ jobs:
       report: false
       gdb: false
       build-sim: false
+      regression-suite: p0
       builder-image-repository: ghcr.io/${{ github.repository_owner }}/loongarch-builder
       builder-image-tag: glibc228
       host-glibc-max: "2.28"

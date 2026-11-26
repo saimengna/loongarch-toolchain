@@ -9,6 +9,7 @@ PREFIX="/mnt/loongarch"
 REPORT_DIR=""
 BASELINE_DIR="$ROOT/.github/regression-baseline"
 UPDATE_BASELINE=0
+FULL_BINUTILS=0
 
 usage() {
   cat <<'EOT'
@@ -20,6 +21,7 @@ usage() {
   --report-dir DIR    保存回归摘要和运行日志
   --baseline-dir DIR  已知失败基线目录
   --update-baseline   把当前失败写入基线（人工审查后使用）
+  --full-binutils     额外跑完整的 binutils/ld 套件（只报告，不拦截，耗时很长）
   -h, --help
 EOT
 }
@@ -37,6 +39,7 @@ while [[ $# -gt 0 ]]; do
     --report-dir) [[ $# -ge 2 ]] || die "$1 缺少参数"; REPORT_DIR="$2"; shift 2 ;;
     --baseline-dir) [[ $# -ge 2 ]] || die "$1 缺少参数"; BASELINE_DIR="$2"; shift 2 ;;
     --update-baseline) UPDATE_BASELINE=1; shift ;;
+    --full-binutils) FULL_BINUTILS=1; shift ;;
     -h|--help) usage; exit 0 ;;
     *) die "未知参数: $1" ;;
   esac
@@ -61,6 +64,14 @@ qemu="$PREFIX/bin/qemu-loongarch64"
 [[ -x "$qemu" ]] || qemu="$(command -v qemu-loongarch64 || true)"
 [[ -n "$qemu" && -x "$qemu" ]] || die "找不到 qemu-loongarch64"
 
+# When QEMU is not built from source (for example a glibc-2.28 container build
+# tested on the runner with the distro qemu-user-static package) there is no
+# stamps/build-qemu.  Drop the prerequisite so make does not try to rebuild it.
+sim_args=()
+if [[ ! -f "$ROOT/stamps/build-qemu" ]]; then
+  sim_args=("SIM_STAMP=")
+fi
+
 [[ -n "$REPORT_DIR" ]] || REPORT_DIR="$ROOT/tier2-results"
 mkdir -p "$REPORT_DIR"
 
@@ -76,7 +87,7 @@ run_make() {
 
   echo "==> make $target"
   set +e
-  make -j"$(nproc)" "$target" "$@"
+  make -j"$(nproc)" "$target" "${sim_args[@]}" "$@"
   rc=$?
   set -e
   if [[ "$rc" -ne 0 ]]; then
@@ -147,13 +158,17 @@ if [[ "$MODE" == linux ]]; then
     1 \
     "$binutils_build"
 
-  remove_stamp check-binutils-linux
-  run_make check-binutils-linux
-  run_summary \
-    "binutils/linux/full" \
-    "$BASELINE_DIR/glibc-gcc-p0-binutils.txt" \
-    0 \
-    "$binutils_build"
+  # The full suites are report-only and cost 20-40 minutes under QEMU, so they
+  # stay opt-in instead of running on every build.
+  if [[ "$FULL_BINUTILS" == 1 ]]; then
+    remove_stamp check-binutils-linux
+    run_make check-binutils-linux
+    run_summary \
+      "binutils/linux/full" \
+      "$BASELINE_DIR/glibc-gcc-p0-binutils.txt" \
+      0 \
+      "$binutils_build"
+  fi
 fi
 
 echo "==> P0 runtime checks"
