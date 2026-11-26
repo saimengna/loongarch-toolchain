@@ -624,7 +624,6 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: tier2-${{ matrix.os }}-${{ matrix.mode }}-${{ github.run_id }}
-          retention-days: 7
           path: |
             tier2-results/**
             build-gcc-${{ matrix.mode }}-stage2/gcc/testsuite/**/*.sum
