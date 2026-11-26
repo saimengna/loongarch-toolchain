@@ -1086,27 +1086,27 @@ stamps/check-gcc-musl: stamps/build-gcc-musl-stage2 $(SIM_STAMP)
 	date > $@
 
 stamps/check-binutils-linux: stamps/build-gcc-linux-stage2 $(SIM_STAMP)
-	$(SIM_PREPARE) DEJAGNU="$(srcdir)/scripts/site.exp" $(MAKE) -C build-binutils-linux $(BINUTILS_CHECK_TARGETS) -k "RUNTESTFLAGS=--target_board='$(GLIBC_TARGET_BOARDS)'" || true
+	$(SIM_PREPARE) DEJAGNU="$(srcdir)/scripts/site.exp" $(MAKE) -C build-binutils-linux $(BINUTILS_CHECK_TARGETS) -k "RUNTESTFLAGS=$(RUNTESTFLAGS) --target_board='$(GLIBC_TARGET_BOARDS)'" || true
 	date > $@
 
 stamps/check-binutils-newlib: stamps/build-gcc-newlib-stage2 $(SIM_STAMP)
-	$(SIM_PREPARE) DEJAGNU="$(srcdir)/scripts/site.exp" $(MAKE) -C build-binutils-newlib $(BINUTILS_CHECK_TARGETS) -k "RUNTESTFLAGS=--target_board='$(NEWLIB_TARGET_BOARDS)'" || true
+	$(SIM_PREPARE) DEJAGNU="$(srcdir)/scripts/site.exp" $(MAKE) -C build-binutils-newlib $(BINUTILS_CHECK_TARGETS) -k "RUNTESTFLAGS=$(RUNTESTFLAGS) --target_board='$(NEWLIB_TARGET_BOARDS)'" || true
 	date > $@
 
 stamps/check-binutils-newlib-nano: stamps/build-gcc-newlib-stage2 $(SIM_STAMP)
-	$(SIM_PREPARE) DEJAGNU="$(srcdir)/scripts/site.exp" $(MAKE) -C build-binutils-newlib $(BINUTILS_CHECK_TARGETS) -k "RUNTESTFLAGS=--target_board='$(NEWLIB_NANO_TARGET_BOARDS)'" || true
+	$(SIM_PREPARE) DEJAGNU="$(srcdir)/scripts/site.exp" $(MAKE) -C build-binutils-newlib $(BINUTILS_CHECK_TARGETS) -k "RUNTESTFLAGS=$(RUNTESTFLAGS) --target_board='$(NEWLIB_NANO_TARGET_BOARDS)'" || true
 	date > $@
 
 stamps/check-gdb-linux: stamps/build-gcc-linux-stage2 stamps/build-gdb-linux $(SIM_STAMP)
-	$(SIM_PREPARE) DEJAGNU="$(srcdir)/scripts/site.exp" $(MAKE) -C build-gdb-linux check-gdb -k "RUNTESTFLAGS=--target_board='$(GLIBC_TARGET_BOARDS)'" || true
+	$(SIM_PREPARE) DEJAGNU="$(srcdir)/scripts/site.exp" $(MAKE) -C build-gdb-linux check-gdb -k "RUNTESTFLAGS=$(RUNTESTFLAGS) --target_board='$(GLIBC_TARGET_BOARDS)'" || true
 	date > $@
 
 stamps/check-gdb-newlib: stamps/build-gcc-newlib-stage2 stamps/build-gdb-newlib $(SIM_STAMP)
-	$(SIM_PREPARE) DEJAGNU="$(srcdir)/scripts/site.exp" $(MAKE) -C build-gdb-newlib check-gdb -k "RUNTESTFLAGS=--target_board='$(NEWLIB_TARGET_BOARDS)'" || true
+	$(SIM_PREPARE) DEJAGNU="$(srcdir)/scripts/site.exp" $(MAKE) -C build-gdb-newlib check-gdb -k "RUNTESTFLAGS=$(RUNTESTFLAGS) --target_board='$(NEWLIB_TARGET_BOARDS)'" || true
 	date > $@
 
 stamps/check-gdb-newlib-nano: stamps/build-gcc-newlib-stage2 stamps/build-gdb-newlib $(SIM_STAMP)
-	$(SIM_PREPARE) DEJAGNU="$(srcdir)/scripts/site.exp" $(MAKE) -C build-gdb-newlib check-gdb -k "RUNTESTFLAGS=--target_board='$(NEWLIB_NANO_TARGET_BOARDS)'" || true
+	$(SIM_PREPARE) DEJAGNU="$(srcdir)/scripts/site.exp" $(MAKE) -C build-gdb-newlib check-gdb -k "RUNTESTFLAGS=$(RUNTESTFLAGS) --target_board='$(NEWLIB_NANO_TARGET_BOARDS)'" || true
 	date > $@
 
 stamps/check-glibc-linux-%: stamps/build-gcc-linux-stage2 $(SIM_STAMP) \
