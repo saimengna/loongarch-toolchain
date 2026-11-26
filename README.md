@@ -56,6 +56,17 @@ make -j"$(nproc)" musl
 make -j"$(nproc)" linux
 ```
 
+内核头文件不在仓库的 `linux-headers/` 下时，可以用
+`--with-linux-headers-src` 指定：
+
+```bash
+./configure --prefix="$HOME/loongarch64" --enable-linux \
+  --with-linux-headers-src=/usr/src/linux
+```
+
+该选项既可以指向内核源码树根，也可以指向其中的 `include` 目录；构建时会把
+对应的 UAPI 头文件安装到 sysroot 的 `usr/include`。
+
 构建 QEMU user-mode 模拟器：
 
 ```bash
@@ -70,6 +81,10 @@ bash scripts/run-tier2-regression.sh \
   --suite p0 \
   --prefix "$HOME/loongarch64"
 ```
+
+默认只跑 P0 门禁；需要额外的完整 binutils/ld 报告时加 `--full-binutils`
+（只报告、不拦截，耗时较长）。QEMU 没有用 `make build-sim` 构建时，脚本
+会直接使用 `PATH` 上的 `qemu-loongarch64`。
 
 ## 获取或更新源码
 
@@ -108,6 +123,10 @@ git add gcc
 git commit -m "gcc: update source commit"
 ```
 
+注意 `git submodule update --remote` 拉取的是 `.gitmodules` 中 `branch`
+指定的分支最新提交，不是当前固定的 commit；升级时应确认
+`git -C gcc rev-parse HEAD` 的结果符合预期。
+
 提交后 `Source CI` 会按新的 gitlink 构建；打 `v*` tag 时，Release 使用该
 tag 指向的同一组 gitlink 构建。实际构建出的组件 commit 会写入每个包的
 `VERSIONS.txt`。
@@ -122,6 +141,9 @@ make package PACKAGE_MODE=linux PACKAGE_OUTDIR="$PWD/artifacts"
 
 生成的压缩包会包含 `VERSIONS.txt`，记录 gcc、binutils、glibc 等组件的
 实际 commit。
+
+从没有 `.git` 的源码包构建时，`SOURCE-OFFER.txt` 会把本仓库 commit 写成
+`unknown`；正式发布请在 git checkout 中构建，或设置 `SOURCE_COMMIT`。
 
 测试报告默认只打印统计信息。需要“有意外失败就退出非零”时：
 
@@ -177,8 +199,9 @@ GitHub Actions 使用与本地相同的 `configure` 和 `make` 流程：
   `gcc`、`binutils`、`glibc`、`newlib`、`musl`、`llvm` 等 gitlink、
   `.gitmodules` 或源码拉取脚本时自动触发。它按 gitlink 的源码 commit
   构建六个 GCC 包和六个 GCC+LLVM 包，并运行与 Release 相同的 `verify`
-  验收和 QEMU smoke 测试；还会运行 Tier 2 P0 的 `regression-linux` 和
-  `regression-musl`。它不创建 Release，但会明显增加 CI 时间。
+  验收和 QEMU smoke 测试；glibc 和 musl 包还会在同一个 job 里、打包之前
+  用本次构建出的工具链跑一遍 Tier 2 P0 回归。它不创建 Release，但会明显
+  增加 CI 时间。
 - `.github/workflows/nightly-release.yml`：每天 00:00 UTC（北京时间 08:00）
   检查默认分支最近一次 commit。最近 24 小时内有提交时，重新构建六个 GCC
   包和六个 GCC+LLVM 包，并发布 `nightly-YYYY.MM.DD` 预发布 Release；没有
@@ -191,12 +214,13 @@ GitHub Actions 使用与本地相同的 `configure` 和 `make` 流程：
   runner 上重新解压并检查对应架构的 GCC 和 Clang，再用 QEMU user-mode
   运行 glibc/musl smoke 程序；每个包都包含许可证和源码信息，Release 页面
   也会附带 `LICENSE`、`THIRD_PARTY_NOTICES.md` 和 `SHA256SUMS`。
-  Release 还会运行两个独立的 Tier 2 P0 回归 job：`regression-linux` 和
-  `regression-musl`。它们使用 Ubuntu 宿主构建的 GCC、`gcc.target/loongarch`
-  测试、Linux 的 LoongArch 汇编与 objdump 子集，以及 `-O0`/`-O2`/`-Os`
-  运行测试；完整的 binutils/ld 套件仍会运行，但只作为报告，不作为发布
-  门禁。`publish` 依赖这两个 job，回归失败时不会发布。P0 基线位于
-  `.github/regression-baseline/`。
+  Tier 2 P0 回归与构建在同一个 job 内完成：容器构建结束、RPATH 补好之后，
+  在 runner 上用发行版 qemu-user 运行 `gcc.target/loongarch` 测试、Linux
+  的 LoongArch 汇编与 objdump 子集，以及 `-O0`/`-O2`/`-Os` 运行测试，通过
+  之后才打包。这样测试的就是最终发布的二进制，不需要再单独构建一份。
+  完整的 binutils/ld 套件默认不跑（只报告、不作为门禁），需要时加
+  `--full-binutils` 手动开启。`build` 失败或回归失败时不会发布。P0 基线
+  位于 `.github/regression-baseline/`。
 - `.github/workflows/build.yml`：仅供手动开发验证，保留 Ubuntu 22.04/24.04
   的普通宿主构建、LLVM 和 QEMU/testsuite 能力；不参与正式发布。
 - `.github/workflows/llvm-smoke.yml`：手动运行的单行矩阵 LLVM 验证。它只在
@@ -236,6 +260,11 @@ glibc。所有归档都包含 `LICENSE`、`LICENSE.LGPL-2.1`、`LICENSE.GPL-2.0`
 `VERSIONS.txt` 同时记录上游组件、本仓库 commit 和 tag；`BUILD-INFO.txt`
 记录宿主架构、glibc 上限和目标库。正式 Release 还会提供 `SHA256SUMS`，
 下载后可在同一目录执行 `sha256sum -c SHA256SUMS`。
+
+使用 glibc 目标库的程序要求目标内核为 Linux 5.19 或更高（LoongArch 主线
+内核起始版本）；如果需要在更老的厂商内核（例如 4.19）上运行，需要自行
+调整 Makefile 中的 `--enable-kernel` 并重新验证。`newlib` 和 `musl` 目标
+不受此限制。
 
 CI 构建的包还会在 `lib/` 中附带 glibc 2.28 构建镜像使用的
 `libmpfr.so.4`、`libmpc.so.3`、`libgmp.so.10`，并给工具链可执行文件

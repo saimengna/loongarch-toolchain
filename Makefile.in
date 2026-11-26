@@ -11,6 +11,9 @@ NEWLIB_SRCDIR := @with_newlib_src@
 GLIBC_SRCDIR := @with_glibc_src@
 MUSL_SRCDIR := @with_musl_src@
 LINUX_HEADERS_SRCDIR := @with_linux_headers_src@
+# --with-linux-headers-src may point either at a kernel tree root or at its
+# UAPI include directory.  glibc's own --with-headers expects the latter.
+LINUX_HEADERS_INCLUDE := $(if $(wildcard $(LINUX_HEADERS_SRCDIR)/include/linux),$(LINUX_HEADERS_SRCDIR)/include,$(LINUX_HEADERS_SRCDIR))
 GDB_SRCDIR := @with_gdb_src@
 QEMU_SRCDIR := @with_qemu_src@
 LLVM_SRCDIR := @with_llvm_src@
@@ -248,12 +251,8 @@ stamps/check-write-permission:
 	mkdir -p $(dir $@) && touch $@
 
 stamps/build-linux-headers:
-	mkdir -p $(SYSROOT)/usr/
-ifdef LINUX_HEADERS_SRCDIR
-	cp -a $(LINUX_HEADERS_SRCDIR) $(SYSROOT)/usr/
-else
-	cp -a $(srcdir)/linux-headers/include $(SYSROOT)/usr/
-endif
+	mkdir -p $(SYSROOT)/usr/include
+	cp -a $(LINUX_HEADERS_INCLUDE)/. $(SYSROOT)/usr/include/
 	mkdir -p $(dir $@) && touch $@
 
 #
@@ -425,7 +424,7 @@ stamps/build-glibc-linux-headers: $(GLIBC_SRCDIR) $(GLIBC_SRC_GIT) stamps/build-
 		--host=$(LINUX_TUPLE) \
 		--prefix=$(SYSROOT)/usr \
 		--enable-shared \
-		--with-headers=$(LINUX_HEADERS_SRCDIR) \
+		--with-headers=$(LINUX_HEADERS_INCLUDE) \
 		--disable-multilib \
 		--enable-kernel=5.19.0
 	$(MAKE) -C $(notdir $@) install-headers
@@ -456,8 +455,7 @@ endif
 		--prefix=/usr \
 		--disable-werror \
 		--enable-shared \
-		--enable-obsolete-rpc \
-		--with-headers=$(LINUX_HEADERS_SRCDIR) \
+		--with-headers=$(LINUX_HEADERS_INCLUDE) \
 		$(MULTILIB_FLAGS) \
 		--enable-kernel=5.19.0 \
 		$(GLIBC_TARGET_FLAGS) \

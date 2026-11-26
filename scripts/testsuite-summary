@@ -6,8 +6,12 @@ import collections
 import os
 import sys
 
-COUNTED = ("PASS", "FAIL", "XPASS", "XFAIL", "UNRESOLVED", "UNSUPPORTED", "ERROR")
-UNEXPECTED = ("FAIL", "XPASS", "UNRESOLVED", "ERROR")
+COUNTED = (
+    "PASS", "FAIL", "XPASS", "XFAIL", "UNRESOLVED", "UNSUPPORTED",
+    "ERROR", "TIMEOUT", "KFAIL", "KPASS",
+)
+# KFAIL is an expected failure; KPASS and TIMEOUT must not be ignored.
+UNEXPECTED = ("FAIL", "XPASS", "UNRESOLVED", "ERROR", "TIMEOUT", "KPASS")
 
 
 def find_sum_files(paths):

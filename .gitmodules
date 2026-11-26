@@ -1,7 +1,7 @@
 [submodule "gcc"]
 	path = gcc
 	url = https://github.com/gcc-mirror/gcc.git
-	branch = master
+	branch = releases/gcc-16
 	shallow = true
 [submodule "binutils"]
 	path = binutils
@@ -21,7 +21,7 @@
 [submodule "glibc"]
 	path = glibc
 	url = https://github.com/bminor/glibc.git
-	branch = master
+	branch = release/2.36/master
 	shallow = true
 [submodule "musl"]
 	path = musl

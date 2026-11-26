@@ -44,10 +44,10 @@ repo_commit="${SOURCE_COMMIT:-}"
 if [[ -z "$repo_commit" ]]; then
   repo_commit="$(git -C "$REPO_ROOT" rev-parse HEAD 2>/dev/null || true)"
 fi
-[[ -n "$repo_commit" ]] || {
-  echo "无法确定本仓库 commit；请在 git checkout 中运行，或设置 SOURCE_COMMIT" >&2
-  exit 1
-}
+if [[ -z "$repo_commit" ]]; then
+  repo_commit="unknown"
+  echo "警告: 无法确定本仓库 commit（没有 .git 且未设置 SOURCE_COMMIT），SOURCE-OFFER 将标记为 unknown" >&2
+fi
 
 repo_tag="${SOURCE_TAG:-${TAG:-}}"
 if [[ -z "$repo_tag" ]]; then
@@ -65,10 +65,18 @@ if [[ -z "$repo_slug" ]]; then
   esac
   repo_slug="${repo_slug%.git}"
 fi
+if [[ -z "$repo_slug" ]]; then
+  repo_slug="saimengna/loongarch-toolchain"
+  echo "警告: 无法从 git remote 确定仓库地址，SOURCE-OFFER 使用默认地址 ${repo_slug}" >&2
+fi
 
 source_url="${SOURCE_URL:-}"
 if [[ -z "$source_url" && -n "$repo_slug" ]]; then
-  source_url="https://github.com/${repo_slug}/tree/${repo_commit}"
+  if [[ "$repo_commit" == unknown ]]; then
+    source_url="https://github.com/${repo_slug}"
+  else
+    source_url="https://github.com/${repo_slug}/tree/${repo_commit}"
+  fi
 fi
 [[ -n "$source_url" ]] || {
   echo "无法确定源码 URL；请设置 SOURCE_REPO 或 SOURCE_URL" >&2
