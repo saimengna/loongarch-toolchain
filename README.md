@@ -84,10 +84,10 @@ bash scripts/run-tier2-regression.sh \
 
 默认只跑 P0 门禁；需要额外的完整 binutils/ld 报告时加 `--full-binutils`
 （只报告、不拦截，耗时较长）。QEMU 没有用 `make build-sim` 构建时，脚本
-会直接使用 `PATH` 上的 `qemu-loongarch64`。如果工具链是在 glibc 2.28
-容器里构建的，GCC build tree 里的 `cc1` 依赖随包的 `libmpfr.so.4`，运行
-前需要 `export LD_LIBRARY_PATH="$PREFIX/lib"`；装好的编译器本身带 RPATH，
-不需要这个变量。
+会直接使用 `PATH` 上的 `qemu-loongarch64`。如果要在容器外对一份 glibc 2.28
+容器构建的树手工跑测试，GCC build tree 里的 `cc1` 依赖随包的
+`libmpfr.so.4`，需要先 `export LD_LIBRARY_PATH="$PREFIX/lib"`；CI 里则是
+回到同一个容器执行，不需要这个变量。
 
 ## 获取或更新源码
 
@@ -218,9 +218,12 @@ GitHub Actions 使用与本地相同的 `configure` 和 `make` 流程：
   运行 glibc/musl smoke 程序；每个包都包含许可证和源码信息，Release 页面
   也会附带 `LICENSE`、`THIRD_PARTY_NOTICES.md` 和 `SHA256SUMS`。
   Tier 2 P0 回归与构建在同一个 job 内完成：容器构建结束、RPATH 补好之后，
-  在 runner 上用发行版 qemu-user 运行 `gcc.target/loongarch` 测试、Linux
-  的 LoongArch 汇编与 objdump 子集，以及 `-O0`/`-O2`/`-Os` 运行测试，通过
-  之后才打包。这样测试的就是最终发布的二进制，不需要再单独构建一份。
+  重新进入同一个 glibc 2.28 容器，用一个只读挂载的静态 qemu 运行
+  `gcc.target/loongarch` 测试、Linux 的 LoongArch 汇编与 objdump 子集，
+  以及 `-O0`/`-O2`/`-Os` 运行测试，通过之后才打包。在容器里跑是必需的：
+  构建树是为 AlmaLinux 8 生成的，runner 上的 dash 和 `libmpfr.so.6` 会直接
+  弄坏 libtool 和 build tree 里的 `cc1`。这样测试的就是最终发布的二进制，
+  不需要再单独构建一份。
   完整的 binutils/ld 套件默认不跑（只报告、不作为门禁），需要时加
   `--full-binutils` 手动开启。`build` 失败或回归失败时不会发布。P0 基线
   位于 `.github/regression-baseline/`。

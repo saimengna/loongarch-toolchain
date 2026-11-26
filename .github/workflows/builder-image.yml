@@ -61,5 +61,14 @@ jobs:
           set -euo pipefail
           docker run --rm "$IMAGE" sh -c 'cmake --version | head -n 1'
 
+      - name: Verify testsuite prerequisites
+        run: |
+          set -euo pipefail
+          docker run --rm "$IMAGE" bash -c '
+            set -euo pipefail
+            runtest --version
+            echo "puts tcl-ok" | tclsh
+          '
+
       - name: Push builder image
         run: docker push "$IMAGE"

@@ -44,4 +44,21 @@ RUN dnf -y install \
     && dnf clean all \
     && rm -rf /var/cache/dnf /var/cache/yum
 
+# DejaGNU (runtest) drives the GCC/binutils testsuites used by the Tier 2
+# gate.  expect/tcl are in AppStream; dejagnu normally needs EPEL, so fall
+# back to a source build when the package is unavailable.
+RUN dnf -y install expect tcl curl \
+ && (dnf -y install epel-release && dnf -y install dejagnu || true) \
+ && if ! command -v runtest >/dev/null 2>&1; then \
+      curl -fsSL https://ftp.gnu.org/gnu/dejagnu/dejagnu-1.6.1.tar.gz | tar xz -C /tmp \
+      && cd /tmp/dejagnu-1.6.1 \
+      && ./configure \
+      && make -j"$(nproc)" \
+      && make install \
+      && rm -rf /tmp/dejagnu-1.6.1; \
+    fi \
+ && runtest --version \
+ && dnf clean all \
+ && rm -rf /var/cache/dnf /var/cache/yum
+
 WORKDIR /work

@@ -241,7 +241,7 @@ jobs:
   build:
     needs: [submodule-cache, validate-inputs]
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 350
+    timeout-minutes: 400
     strategy:
       fail-fast: false
       matrix:
@@ -522,68 +522,47 @@ jobs:
           done
           rm -rf "$tmpdir"
 
-      - name: Install Tier 2 test dependencies
+      - name: Install qemu-user-static for the container
         if: ${{ inputs.builder-image-repository != '' && inputs.regression-suite != '' && matrix.compiler == 'gcc' && matrix.mode != 'newlib' }}
         shell: bash
         run: |
           set -euo pipefail
-          packages=()
-
-          if ! command -v runtest >/dev/null 2>&1; then
-            packages+=(dejagnu)
-          fi
-
-          # Debian/Ubuntu ship /usr/bin/qemu-loongarch64 in qemu-user, while
-          # qemu-user-static only ships the -static suffixed binary.
-          if ! command -v qemu-loongarch64 >/dev/null 2>&1; then
-            if command -v qemu-loongarch64-static >/dev/null 2>&1; then
-              qemu_bindir="$RUNNER_TEMP/qemu-bin"
-              mkdir -p "$qemu_bindir"
-              ln -sf "$(command -v qemu-loongarch64-static)" "$qemu_bindir/qemu-loongarch64"
-              echo "$qemu_bindir" >> "$GITHUB_PATH"
-              export PATH="$qemu_bindir:$PATH"
-            else
-              packages+=(qemu-user)
-            fi
-          fi
-
-          if (( ${#packages[@]} > 0 )); then
+          if ! command -v qemu-loongarch64-static >/dev/null 2>&1; then
             sudo apt-get update
-            sudo apt-get install -y "${packages[@]}"
+            sudo apt-get install -y qemu-user-static
           fi
-          command -v runtest
-          command -v qemu-loongarch64
-          runtest --version | head -n 1
-          qemu-loongarch64 --version | head -n 1
+          qemu-loongarch64-static --version | head -n 1
 
-      # The archive is built once, inside the glibc 2.28 container.  Tier 2
-      # runs on that same build tree on the runner, using the distro QEMU
-      # user-mode emulator, so what is tested is what gets packaged.
-      - name: Run Tier 2 regression on the built toolchain
+      # The tree was configured and built for the glibc 2.28 container, so the
+      # testsuites must run there too: the runner's dash and libmpfr.so.6 would
+      # otherwise break libtool and the build-tree cc1.
+      - name: Run Tier 2 regression in the glibc 2.28 container
         if: ${{ inputs.builder-image-repository != '' && inputs.regression-suite != '' && matrix.compiler == 'gcc' && matrix.mode != 'newlib' }}
         shell: bash
         run: |
           set -euo pipefail
-          prefix="$GITHUB_WORKSPACE/install-toolchain"
-
-          # The compiler in the GCC build tree is linked against the container
-          # libmpfr.so.4, which is bundled under $prefix/lib.  The installed
-          # compiler does not need this because it carries an $ORIGIN RPATH.
-          export LD_LIBRARY_PATH="$prefix/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
-          for exe in build-gcc-*-stage2/gcc/cc1 build-gcc-*-stage2/gcc/cc1plus; do
-            [[ -f "$exe" ]] || continue
-            if ldd "$exe" | grep -q 'not found'; then
-              echo "缺少动态库依赖: $exe" >&2
-              ldd "$exe" >&2
-              exit 1
-            fi
-          done
-
-          bash scripts/run-tier2-regression.sh \
-            --mode '${{ matrix.mode }}' \
-            --suite '${{ inputs.regression-suite }}' \
-            --prefix "$prefix" \
-            --report-dir "$GITHUB_WORKSPACE/tier2-results"
+          image='${{ steps.names.outputs.builder-image }}'
+          qemu="$(command -v qemu-loongarch64-static)"
+          test -n "$image"
+          test -n "$qemu"
+          # The static build has no glibc dependency, so it runs inside the
+          # AlmaLinux 8 image.  The dynamic qemu-user binary would not.
+          docker run --rm --init \
+            --user "$(id -u):$(id -g)" \
+            -e HOME=/tmp \
+            -e USER=runner \
+            -e LOGNAME=runner \
+            -v "$GITHUB_WORKSPACE:$GITHUB_WORKSPACE" \
+            -v "$qemu:/usr/local/bin/qemu-loongarch64:ro" \
+            -w "$GITHUB_WORKSPACE" \
+            "$image" \
+            bash -c "set -e; test -f /usr/local/bin/qemu-loongarch64 || { echo 'qemu mount failed' >&2; exit 1; }; \
+              qemu-loongarch64 --version | head -n 1; \
+              cd '$GITHUB_WORKSPACE' && bash scripts/run-tier2-regression.sh \
+              --mode '${{ matrix.mode }}' \
+              --suite '${{ inputs.regression-suite }}' \
+              --prefix '$GITHUB_WORKSPACE/install-toolchain' \
+              --report-dir '$GITHUB_WORKSPACE/tier2-results'"
 
       - name: Package glibc 2.28 toolchain
         if: ${{ inputs.builder-image-repository != '' }}

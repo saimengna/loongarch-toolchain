@@ -175,9 +175,7 @@ echo "==> P0 runtime checks"
 for opt in -O0 -O2 -Os; do
   binary="$tmpdir/p0-execute${opt}"
   output="$REPORT_DIR/p0-execute${opt}.txt"
-  # Keep LD_LIBRARY_PATH for the host compiler: a toolchain built inside the
-  # glibc-2.28 container links against the bundled libmpfr.so.4.
-  if ! "$PREFIX/bin/$triple-gcc" \
+  if ! env -u LD_LIBRARY_PATH "$PREFIX/bin/$triple-gcc" \
       "$opt" "$ROOT/tests/tier2/p0-execute.c" -o "$binary"; then
     echo "编译失败: $opt" >&2
     failed=1
