@@ -528,12 +528,31 @@ jobs:
         run: |
           set -euo pipefail
           packages=()
-          command -v runtest >/dev/null 2>&1 || packages+=(dejagnu)
-          command -v qemu-loongarch64 >/dev/null 2>&1 || packages+=(qemu-user-static)
+
+          if ! command -v runtest >/dev/null 2>&1; then
+            packages+=(dejagnu)
+          fi
+
+          # Debian/Ubuntu ship /usr/bin/qemu-loongarch64 in qemu-user, while
+          # qemu-user-static only ships the -static suffixed binary.
+          if ! command -v qemu-loongarch64 >/dev/null 2>&1; then
+            if command -v qemu-loongarch64-static >/dev/null 2>&1; then
+              qemu_bindir="$RUNNER_TEMP/qemu-bin"
+              mkdir -p "$qemu_bindir"
+              ln -sf "$(command -v qemu-loongarch64-static)" "$qemu_bindir/qemu-loongarch64"
+              echo "$qemu_bindir" >> "$GITHUB_PATH"
+              export PATH="$qemu_bindir:$PATH"
+            else
+              packages+=(qemu-user)
+            fi
+          fi
+
           if (( ${#packages[@]} > 0 )); then
             sudo apt-get update
             sudo apt-get install -y "${packages[@]}"
           fi
+          command -v runtest
+          command -v qemu-loongarch64
           runtest --version | head -n 1
           qemu-loongarch64 --version | head -n 1
 
@@ -545,10 +564,25 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          prefix="$GITHUB_WORKSPACE/install-toolchain"
+
+          # The compiler in the GCC build tree is linked against the container
+          # libmpfr.so.4, which is bundled under $prefix/lib.  The installed
+          # compiler does not need this because it carries an $ORIGIN RPATH.
+          export LD_LIBRARY_PATH="$prefix/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+          for exe in build-gcc-*-stage2/gcc/cc1 build-gcc-*-stage2/gcc/cc1plus; do
+            [[ -f "$exe" ]] || continue
+            if ldd "$exe" | grep -q 'not found'; then
+              echo "缺少动态库依赖: $exe" >&2
+              ldd "$exe" >&2
+              exit 1
+            fi
+          done
+
           bash scripts/run-tier2-regression.sh \
             --mode '${{ matrix.mode }}' \
             --suite '${{ inputs.regression-suite }}' \
-            --prefix "$GITHUB_WORKSPACE/install-toolchain" \
+            --prefix "$prefix" \
             --report-dir "$GITHUB_WORKSPACE/tier2-results"
 
       - name: Package glibc 2.28 toolchain

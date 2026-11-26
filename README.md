@@ -84,7 +84,10 @@ bash scripts/run-tier2-regression.sh \
 
 默认只跑 P0 门禁；需要额外的完整 binutils/ld 报告时加 `--full-binutils`
 （只报告、不拦截，耗时较长）。QEMU 没有用 `make build-sim` 构建时，脚本
-会直接使用 `PATH` 上的 `qemu-loongarch64`。
+会直接使用 `PATH` 上的 `qemu-loongarch64`。如果工具链是在 glibc 2.28
+容器里构建的，GCC build tree 里的 `cc1` 依赖随包的 `libmpfr.so.4`，运行
+前需要 `export LD_LIBRARY_PATH="$PREFIX/lib"`；装好的编译器本身带 RPATH，
+不需要这个变量。
 
 ## 获取或更新源码
 
