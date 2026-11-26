@@ -64,6 +64,9 @@ qemu="$PREFIX/bin/qemu-loongarch64"
 [[ -x "$qemu" ]] || qemu="$(command -v qemu-loongarch64 || true)"
 [[ -n "$qemu" && -x "$qemu" ]] || die "找不到 qemu-loongarch64"
 
+command -v runtest >/dev/null 2>&1 ||
+  die "找不到 runtest（DejaGNU 未安装，测试将在没有结果的情况下静默通过）"
+
 # When QEMU is not built from source (for example a glibc-2.28 container build
 # tested on the runner with the distro qemu-user-static package) there is no
 # stamps/build-qemu.  Drop the prerequisite so make does not try to rebuild it.

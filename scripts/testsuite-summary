@@ -67,6 +67,10 @@ def main():
         print(f"no .sum files found under: {' '.join(args.paths)}")
         return 1
 
+    if sum(totals.values()) == 0:
+        print("no test results found: every .sum file is empty")
+        return 1
+
     print(
         "TOTAL: "
         + " ".join(f"{key}={totals[key]}" for key in COUNTED if totals[key])
