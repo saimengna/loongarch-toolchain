@@ -54,7 +54,8 @@ esac
 [[ -d "$PREFIX/sysroot" ]] || die "缺少 sysroot: $PREFIX/sysroot"
 
 build_dir="$ROOT/build-gcc-${MODE}-stage2"
-[[ -d "$build_dir/gcc/testsuite" ]] || die "缺少 GCC 测试目录: $build_dir/gcc/testsuite"
+[[ -d "$build_dir" ]] || die "缺少 GCC 构建目录: $build_dir（请先运行 make ${MODE}）"
+[[ -f "$build_dir/gcc/Makefile" ]] || die "GCC 尚未配置: $build_dir/gcc/Makefile"
 
 qemu="$PREFIX/bin/qemu-loongarch64"
 [[ -x "$qemu" ]] || qemu="$(command -v qemu-loongarch64 || true)"

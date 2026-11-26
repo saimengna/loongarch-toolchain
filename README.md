@@ -15,7 +15,6 @@ musl、qemu 和 llvm 从各自的上游仓库获取，不在本仓库重复存�
 | `linux` | `loongarch64-unknown-linux-gnu` | glibc |
 | `musl` | `loongarch64-unknown-linux-musl` | musl |
 
-Picolibc 尚未接入。
 
 ## 快速开始
 
@@ -81,16 +80,9 @@ bash scripts/run-tier2-regression.sh \
 make fetch
 ```
 
-如果还没有生成 Makefile，也可以直接运行
+如果还没有生成 Makefile，也可以尝试从备用源拉取，直接运行
 `bash scripts/fetch-sources.sh`。
 
-`make fetch` 会优先按 gitlink 初始化子模块，失败后按
-`scripts/fetch-sources.sh` 顶部的镜像表逐个尝试备用源。有 gitlink 时，
-备用源也必须拉取主仓库记录的同一个 commit；取不到该 SHA 时默认让构建失败，
-不会静默改用分支最新提交。只有显式设置 `FETCH_ALLOW_BRANCH_FALLBACK=1` 才会
-退回分支最新提交，并打印源码可能漂移的警告。已有源码默认不覆盖；有 gitlink
-时会核对当前 `HEAD`，不一致会直接失败并提示重新拉取。非 gitlink 的已有源码
-仍然跳过。强制重新拉取使用：
 
 ```bash
 make fetch FETCH_ARGS=-f
@@ -120,39 +112,7 @@ git commit -m "gcc: update source commit"
 tag 指向的同一组 gitlink 构建。实际构建出的组件 commit 会写入每个包的
 `VERSIONS.txt`。
 
-## 构建目标
-
-下表列出 Makefile 提供的目标，但它们**不等于当前 CI/Release 都会执行**。
-当前 Source CI 和 Release 构建 newlib/linux/musl 的 GCC 与 GCC+LLVM 包，
-不构建 GDB，也不把 QEMU 打进包；QEMU 只在 Tier 2 回归 job 中临时构建用于测试。
-
-| 目标 | 作用 | 当前 Source CI / Release |
-|------|------|--------------------------|
-| `all` | 构建 configure 选中的默认目标 | 使用具体 stamp target，不直接依赖 `all` |
-| `newlib` / `linux` / `musl` | 三种 C 库工具链 | 全部构建 |
-| `build-binutils` | 单独构建 binutils | 作为工具链一部分构建 |
-| `build-gcc1` / `build-gcc2` | 单独构建 GCC 第一阶段/第二阶段 | 构建 |
-| `build-libc` | 单独构建当前目标的 C 库 | 构建 |
-| `build-gdb` | 单独构建 GDB | **不构建**（CI 使用 `gdb: false`） |
-| `build-qemu` / `build-sim` | 构建 QEMU user-mode 模拟器 | **不打包**；Tier 2 回归会临时构建用于测试 |
-| `build-llvm` | 构建 LLVM/Clang 工具链 | 构建 GCC+LLVM 包时使用 |
-| `check` | 运行当前目标的 GCC 测试 | 不直接调用 |
-| `check-glibc-linux` | 运行 glibc 自身测试 | **不跑** |
-| `check-gcc-linux` / `check-gcc-newlib` / `check-gcc-musl` | 分别运行三种 C 库的 GCC 测试 | Tier 2 当前只跑 linux/musl 的 `gcc.target/loongarch` 子集；newlib 不跑 |
-| `check-newlib-nano` | 运行 newlib-nano 测试 | **不跑** |
-| `check-binutils-linux` / `check-binutils-newlib` | 运行 binutils/GAS/LD 测试 | Tier 2 当前只跑 linux |
-| `check-gdb-linux` / `check-gdb-newlib` | 运行 GDB 测试 | **不跑**（GDB 未构建） |
-| `report` | 汇总当前目标的测试结果 | Tier 2 用 `testsuite-summary` 汇总 |
-| `report-linux` / `report-newlib` / `report-musl` | 汇总对应目标的测试结果 | 不直接调用 |
-| `report-binutils` / `report-gdb` | 单独汇总 binutils 或 GDB 结果 | `report-binutils` 由 Tier 2 汇总替代；`report-gdb` 不跑 |
-| `package` | 把安装目录打成 `.tar.xz` | CI 直接调用 `scripts/package-toolchain.sh` |
-| `versions` | 记录各组件当前 commit 到 `versions.txt` | 使用 |
-| `fetch` | 拉取或更新所有组件源码 | CI 走 `scripts/fetch-sources.sh` |
-| `clean` | 删除 `build-*`、`install-*` 和 `stamps` | 手动使用 |
-
-`build-gdb`、`check-gdb-*`、`report-gdb` 只是可用的 Makefile target，
-不代表当前发布包含 GDB。需要 GDB 时，必须在 configure 时启用 GDB，
-并在本地或单独 workflow 中显式构建。
+## 打包与测试
 
 打包示例：
 
