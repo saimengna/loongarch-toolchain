@@ -702,9 +702,6 @@ with_cpu
 with_sim
 with_languages
 with_mul_fdiv
-enable_multilib
-with_multilib_generator
-with_extra_multilib_test
 enable_gcc_checking
 with_cmodel
 with_target_cflags
@@ -1362,8 +1359,6 @@ Optional Features:
                           information
   --enable-default-pie    build linux toolchain with default PIE
                           [--enable-default-pie]
-  --enable-multilib       build both LA32 and LA64 runtime libraries
-                          [--disable-multilib]
   --enable-gcc-checking   Enable gcc internal checking, it will make gcc very
                           slow, only enable it when developing gcc
                           [--disable-gcc-checking]
@@ -1389,21 +1384,9 @@ Optional Packages:
                           bare-metal/newlib and Linux/musl
   --with-mul-fdiv=yes     Set LoongArch integer mul/div extension (loongarch32
                           with hard-float only)
-  --with-multilib-generator
-                          Multi-libs configuration string, only supported for
-                          bare-metal/elf toolchain, this option implied
-                          --enable-multilib
-  --with-extra-multilib-test
-                          Adding extra multi-libs configuration for testing,
-                          this can be used even --disable-multilib, but be
-                          aware user need to make sure those extra multilib
-                          set can work/compatible with existing multi-libs,
-                          format: <arch>-<abi>;<arch>-<abi> e.g:
-                          --with-extra-multilib-test="loongarch64-lp64s;loongarch64-lp64f"
   --with-cmodel           Set the default code model (normal, tiny, medium,
                           large). Sets the GCC driver default via --with-specs
-                          and, when --with-multilib-generator does not specify
-                          --cmodel variants, also sets CFLAGS_FOR_TARGET.
+                          and also sets CFLAGS_FOR_TARGET.
                           [--with-cmodel=normal]
   --with-target-cflags    Add extra target flags for C for library code
   --with-target-cxxflags  Add extra target flags for C++ for library code
@@ -4368,96 +4351,12 @@ WITH_SIM=$with_sim
 WITH_LANGUAGES=$with_languages
 
 
-# Check whether --enable-multilib was given.
-if test ${enable_multilib+y}
-then :
-  enableval=$enable_multilib;
-fi
-
-
-
-# Check whether --with-multilib-generator was given.
-if test ${with_multilib_generator+y}
-then :
-  withval=$with_multilib_generator;
-else case e in #(
-  e) with_multilib_generator=no
-	 ;;
-esac
-fi
-
-
-
-# Check whether --with-extra-multilib-test was given.
-if test ${with_extra_multilib_test+y}
-then :
-  withval=$with_extra_multilib_test;
-else case e in #(
-  e) with_extra_multilib_test=no
-	 ;;
-esac
-fi
-
-
-if test "x$with_multilib_generator" != xno
-then :
-  multilib_gen="$with_multilib_generator"
-
-else case e in #(
-  e) multilib_gen=""
- ;;
-esac
-fi
-
-if test "x$with_extra_multilib_test" != xno
-then :
-  extra_multilib_test="$with_extra_multilib_test"
-
-else case e in #(
-  e) extra_multilib_test=""
- ;;
-esac
-fi
-
-if test "x$enable_multilib" = xyes || test "x$with_multilib_generator" != xno
-then :
-  multilib_flags=--enable-multilib
-
-else case e in #(
-  e) multilib_flags=--disable-multilib
- ;;
-esac
-fi
-
-if test "x$enable_multilib" = xyes
-then :
-  glibc_multilib_names="loongarch64-lp64d loongarch64-lp64f loongarch64-lp64s"
-
-else case e in #(
-  e) glibc_multilib_names="$with_arch-$with_abi"
- ;;
-esac
-fi
-
-if test "x$enable_multilib" = xyes
-then :
-  newlib_multilib_names="loongarch64-lp64d loongarch64-lp64f loongarch64-lp64s loongarch32-ilp32d loongarch32-ilp32f loongarch32-ilp32s"
-
-else case e in #(
-  e) newlib_multilib_names="$with_arch-$with_abi"
- ;;
-esac
-fi
-
-if test "x$enable_multilib" = xyes
-then :
-  musl_multilib_names="loongarch64-lp64d loongarch64-lp64f loongarch64-lp64s"
-
-else case e in #(
-  e) musl_multilib_names="$with_arch-$with_abi"
- ;;
-esac
-fi
+multilib_gen=""
+extra_multilib_test=""
+multilib_flags=--disable-multilib
+glibc_multilib_names="$with_arch-$with_abi"
+newlib_multilib_names="$with_arch-$with_abi"
+musl_multilib_names="$with_arch-$with_abi"
 
 # Check whether --enable-gcc-checking was given.
 if test ${enable_gcc_checking+y}
@@ -6028,4 +5927,3 @@ if test -n "$ac_unrecognized_opts" && test "$enable_option_checking" != no; then
   { printf '%s\n' "$as_me:${as_lineno-$LINENO}: WARNING: unrecognized options: $ac_unrecognized_opts" >&5
 printf '%s\n' "$as_me: WARNING: unrecognized options: $ac_unrecognized_opts" >&2;}
 fi
-

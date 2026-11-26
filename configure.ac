@@ -142,47 +142,12 @@ AC_SUBST(WITH_ABI, --with-abi=$with_abi)
 AC_SUBST(WITH_SIM, $with_sim)
 AC_SUBST(WITH_LANGUAGES, $with_languages)
 
-AC_ARG_ENABLE(multilib,
-	[AS_HELP_STRING([--enable-multilib],
-		[build both LA32 and LA64 runtime libraries @<:@--disable-multilib@:>@])])
-
-AC_ARG_WITH(multilib-generator,
-	[AS_HELP_STRING([--with-multilib-generator],
-		[Multi-libs configuration string, only supported for bare-metal/elf toolchain, this option implied --enable-multilib])],
-	[],
-	[with_multilib_generator=no]
-	)
-
-AC_ARG_WITH(extra-multilib-test,
-	[AS_HELP_STRING([--with-extra-multilib-test],
-		[Adding extra multi-libs configuration for testing, this can be used even --disable-multilib, but be aware user need to make sure those extra multilib set can work/compatible with existing multi-libs, format: <arch>-<abi>;<arch>-<abi>  e.g: --with-extra-multilib-test="loongarch64-lp64s;loongarch64-lp64f"])],
-	[],
-	[with_extra_multilib_test=no]
-	)
-
-AS_IF([test "x$with_multilib_generator" != xno],
-	[AC_SUBST(multilib_gen,"$with_multilib_generator")],
-	[AC_SUBST(multilib_gen,"")])
-
-AS_IF([test "x$with_extra_multilib_test" != xno],
-	[AC_SUBST(extra_multilib_test,"$with_extra_multilib_test")],
-	[AC_SUBST(extra_multilib_test,"")])
-
-AS_IF([test "x$enable_multilib" = xyes || test "x$with_multilib_generator" != xno],
-	[AC_SUBST(multilib_flags,--enable-multilib)],
-	[AC_SUBST(multilib_flags,--disable-multilib)])
-
-AS_IF([test "x$enable_multilib" = xyes],
-	[AC_SUBST(glibc_multilib_names,"loongarch64-lp64d loongarch64-lp64f loongarch64-lp64s")],
-	[AC_SUBST(glibc_multilib_names,"$with_arch-$with_abi")])
-
-AS_IF([test "x$enable_multilib" = xyes],
-	[AC_SUBST(newlib_multilib_names,"loongarch64-lp64d loongarch64-lp64f loongarch64-lp64s loongarch32-ilp32d loongarch32-ilp32f loongarch32-ilp32s")],
-	[AC_SUBST(newlib_multilib_names,"$with_arch-$with_abi")])
-
-AS_IF([test "x$enable_multilib" = xyes],
-	[AC_SUBST(musl_multilib_names,"loongarch64-lp64d loongarch64-lp64f loongarch64-lp64s")],
-	[AC_SUBST(musl_multilib_names,"$with_arch-$with_abi")])
+AC_SUBST(multilib_gen,"")
+AC_SUBST(extra_multilib_test,"")
+AC_SUBST(multilib_flags,--disable-multilib)
+AC_SUBST(glibc_multilib_names,"$with_arch-$with_abi")
+AC_SUBST(newlib_multilib_names,"$with_arch-$with_abi")
+AC_SUBST(musl_multilib_names,"$with_arch-$with_abi")
 
 AC_ARG_ENABLE(gcc-checking,
 	[AS_HELP_STRING([--enable-gcc-checking],
@@ -194,7 +159,7 @@ AS_IF([test "x$enable_gcc_checking" = xyes],
 
 AC_ARG_WITH(cmodel,
 	[AS_HELP_STRING([--with-cmodel],
-		[Set the default code model (normal, tiny, medium, large). Sets the GCC driver default via --with-specs and, when --with-multilib-generator does not specify --cmodel variants, also sets CFLAGS_FOR_TARGET. @<:@--with-cmodel=normal@:>@])],
+		[Set the default code model (normal, tiny, medium, large). Sets the GCC driver default via --with-specs and also sets CFLAGS_FOR_TARGET. @<:@--with-cmodel=normal@:>@])],
 	[],
 	[with_cmodel=no]
 	)
