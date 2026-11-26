@@ -193,8 +193,9 @@ GitHub Actions 使用与本地相同的 `configure` 和 `make` 流程：
   也会附带 `LICENSE`、`THIRD_PARTY_NOTICES.md` 和 `SHA256SUMS`。
   Release 还会运行两个独立的 Tier 2 P0 回归 job：`regression-linux` 和
   `regression-musl`。它们使用 Ubuntu 宿主构建的 GCC、`gcc.target/loongarch`
-  测试、Linux 的 binutils 基础测试，以及 `-O0`/`-O2`/`-Os` 运行测试；
-  `publish` 依赖这两个 job，回归失败时不会发布。P0 基线位于
+  测试、Linux 的 LoongArch 汇编与 objdump 子集，以及 `-O0`/`-O2`/`-Os`
+  运行测试；完整的 binutils/ld 套件仍会运行，但只作为报告，不作为发布
+  门禁。`publish` 依赖这两个 job，回归失败时不会发布。P0 基线位于
   `.github/regression-baseline/`。
 - `.github/workflows/build.yml`：仅供手动开发验证，保留 Ubuntu 22.04/24.04
   的普通宿主构建、LLVM 和 QEMU/testsuite 能力；不参与正式发布。
@@ -237,9 +238,10 @@ glibc。所有归档都包含 `LICENSE`、`LICENSE.LGPL-2.1`、`LICENSE.GPL-2.0`
 下载后可在同一目录执行 `sha256sum -c SHA256SUMS`。
 
 CI 构建的包还会在 `lib/` 中附带 glibc 2.28 构建镜像使用的
-`libmpfr.so.4`、`libmpc.so.3`、`libgmp.so.10`，并给宿主 ELF 写入基于
-`$ORIGIN` 的相对 RPATH。用户不需要单独安装这些运行库，也不需要设置
-`LD_LIBRARY_PATH`。
+`libmpfr.so.4`、`libmpc.so.3`、`libgmp.so.10`，并给工具链可执行文件
+（`bin/`、`libexec/gcc/`）写入基于 `$ORIGIN` 的相对 RPATH；这些运行库
+保持原样，不参与 RPATH 改写。用户不需要单独安装这些运行库，也不需要
+设置 `LD_LIBRARY_PATH`。
 
 第三方组件的许可证和版权说明见 `THIRD_PARTY_NOTICES.md`。
 

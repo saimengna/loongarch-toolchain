@@ -994,6 +994,11 @@ REGRESSION_TEST_LIST = gcc
 REPORT_STRICT ?= 0
 REPORT_SUMMARY_FLAGS := $(if $(filter 1 yes true,$(REPORT_STRICT)),--strict)
 
+# Overridable so the Tier 2 P0 run can narrow the testsuites (C-only GCC,
+# LoongArch-only binutils) without weakening the default `make check`.
+GCC_CHECK_TARGET ?= check-gcc
+BINUTILS_CHECK_TARGETS ?= check-binutils check-gas check-ld
+
 .PHONY: check check-linux check-newlib check-newlib-nano check-musl
 check: check-@default_target@
 check-linux: $(patsubst %,check-%-linux,$(REGRESSION_TEST_LIST))
@@ -1063,35 +1068,35 @@ report-gdb-newlib-nano: stamps/check-gdb-newlib-nano
 	$(srcdir)/scripts/testsuite-summary $(REPORT_SUMMARY_FLAGS) --label "gdb/newlib-nano" build-gdb-newlib
 
 stamps/check-gcc-linux: stamps/build-gcc-linux-stage2 $(SIM_STAMP)
-	$(SIM_PREPARE) DEJAGNU="$(srcdir)/scripts/site.exp" $(MAKE) -C build-gcc-linux-stage2 check-gcc "RUNTESTFLAGS=$(RUNTESTFLAGS) --target_board='$(GLIBC_TARGET_BOARDS)'"
+	$(SIM_PREPARE) DEJAGNU="$(srcdir)/scripts/site.exp" $(MAKE) -C build-gcc-linux-stage2 $(GCC_CHECK_TARGET) "RUNTESTFLAGS=$(RUNTESTFLAGS) --target_board='$(GLIBC_TARGET_BOARDS)'"
 	mkdir -p $(dir $@)
 	date > $@
 
 stamps/check-gcc-newlib: stamps/build-gcc-newlib-stage2 $(SIM_STAMP)
-	$(SIM_PREPARE) DEJAGNU="$(srcdir)/scripts/site.exp" $(MAKE) -C build-gcc-newlib-stage2 check-gcc "RUNTESTFLAGS=$(RUNTESTFLAGS) --target_board='$(NEWLIB_TARGET_BOARDS)'"
+	$(SIM_PREPARE) DEJAGNU="$(srcdir)/scripts/site.exp" $(MAKE) -C build-gcc-newlib-stage2 $(GCC_CHECK_TARGET) "RUNTESTFLAGS=$(RUNTESTFLAGS) --target_board='$(NEWLIB_TARGET_BOARDS)'"
 	mkdir -p $(dir $@)
 	date > $@
 
 stamps/check-gcc-newlib-nano: stamps/build-gcc-newlib-stage2 $(SIM_STAMP)
-	$(SIM_PREPARE) DEJAGNU="$(srcdir)/scripts/site.exp" $(MAKE) -C build-gcc-newlib-stage2 check-gcc "RUNTESTFLAGS=$(RUNTESTFLAGS) --target_board='$(NEWLIB_NANO_TARGET_BOARDS)'"
+	$(SIM_PREPARE) DEJAGNU="$(srcdir)/scripts/site.exp" $(MAKE) -C build-gcc-newlib-stage2 $(GCC_CHECK_TARGET) "RUNTESTFLAGS=$(RUNTESTFLAGS) --target_board='$(NEWLIB_NANO_TARGET_BOARDS)'"
 	mkdir -p $(dir $@)
 	date > $@
 
 stamps/check-gcc-musl: stamps/build-gcc-musl-stage2 $(SIM_STAMP)
-	$(SIM_PREPARE) DEJAGNU="$(srcdir)/scripts/site.exp" $(MAKE) -C build-gcc-musl-stage2 check-gcc "RUNTESTFLAGS=$(RUNTESTFLAGS) --target_board='loongarch-sim/-march=$(LLVM_TARGET_ARCH)/-mabi=$(LLVM_TARGET_ABI)/-mcmodel=$(shell echo @cmodel@ | cut -d '=' -f2)'"
+	$(SIM_PREPARE) DEJAGNU="$(srcdir)/scripts/site.exp" $(MAKE) -C build-gcc-musl-stage2 $(GCC_CHECK_TARGET) "RUNTESTFLAGS=$(RUNTESTFLAGS) --target_board='loongarch-sim/-march=$(LLVM_TARGET_ARCH)/-mabi=$(LLVM_TARGET_ABI)/-mcmodel=$(shell echo @cmodel@ | cut -d '=' -f2)'"
 	mkdir -p $(dir $@)
 	date > $@
 
 stamps/check-binutils-linux: stamps/build-gcc-linux-stage2 $(SIM_STAMP)
-	$(SIM_PREPARE) DEJAGNU="$(srcdir)/scripts/site.exp" $(MAKE) -C build-binutils-linux check-binutils check-gas check-ld -k "RUNTESTFLAGS=--target_board='$(GLIBC_TARGET_BOARDS)'" || true
+	$(SIM_PREPARE) DEJAGNU="$(srcdir)/scripts/site.exp" $(MAKE) -C build-binutils-linux $(BINUTILS_CHECK_TARGETS) -k "RUNTESTFLAGS=--target_board='$(GLIBC_TARGET_BOARDS)'" || true
 	date > $@
 
 stamps/check-binutils-newlib: stamps/build-gcc-newlib-stage2 $(SIM_STAMP)
-	$(SIM_PREPARE) DEJAGNU="$(srcdir)/scripts/site.exp" $(MAKE) -C build-binutils-newlib check-binutils check-gas check-ld -k "RUNTESTFLAGS=--target_board='$(NEWLIB_TARGET_BOARDS)'" || true
+	$(SIM_PREPARE) DEJAGNU="$(srcdir)/scripts/site.exp" $(MAKE) -C build-binutils-newlib $(BINUTILS_CHECK_TARGETS) -k "RUNTESTFLAGS=--target_board='$(NEWLIB_TARGET_BOARDS)'" || true
 	date > $@
 
 stamps/check-binutils-newlib-nano: stamps/build-gcc-newlib-stage2 $(SIM_STAMP)
-	$(SIM_PREPARE) DEJAGNU="$(srcdir)/scripts/site.exp" $(MAKE) -C build-binutils-newlib check-binutils check-gas check-ld -k "RUNTESTFLAGS=--target_board='$(NEWLIB_NANO_TARGET_BOARDS)'" || true
+	$(SIM_PREPARE) DEJAGNU="$(srcdir)/scripts/site.exp" $(MAKE) -C build-binutils-newlib $(BINUTILS_CHECK_TARGETS) -k "RUNTESTFLAGS=--target_board='$(NEWLIB_NANO_TARGET_BOARDS)'" || true
 	date > $@
 
 stamps/check-gdb-linux: stamps/build-gcc-linux-stage2 stamps/build-gdb-linux $(SIM_STAMP)

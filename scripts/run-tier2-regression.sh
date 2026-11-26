@@ -88,11 +88,14 @@ run_make() {
 run_summary() {
   local label="$1"
   local baseline="$2"
-  shift 2
+  local strict="$3"
+  shift 3
   local safe_label="${label//\//-}"
   local output="$REPORT_DIR/${safe_label}.txt"
   local rc
-  local summary_args=(--label "$label" --strict --baseline "$baseline")
+  local summary_args=(--label "$label" --baseline "$baseline")
+
+  [[ "$strict" == 1 ]] && summary_args+=(--strict)
 
   [[ "$UPDATE_BASELINE" == 1 ]] && summary_args+=(--update-baseline)
 
@@ -114,19 +117,43 @@ remove_stamp() {
 }
 
 remove_stamp "check-gcc-${MODE}"
-run_make "check-gcc-${MODE}" "RUNTESTFLAGS=gcc.target/loongarch/*.exp"
+rm -f "$build_dir"/gcc/testsuite/*/*.sum
+run_make "check-gcc-${MODE}" \
+  "GCC_CHECK_TARGET=check-gcc-c" \
+  "RUNTESTFLAGS=gcc.target/loongarch/*.exp"
 run_summary \
   "gcc/${MODE}/p0" \
   "$BASELINE_DIR/${baseline_label}-gcc-p0-gcc.txt" \
+  1 \
   "$build_dir/gcc/testsuite"
 
 if [[ "$MODE" == linux ]]; then
+  binutils_build="$ROOT/build-binutils-linux"
+
+  # Upstream check-ld/check-binutils contain many run tests that depend on a
+  # fully functional target loader and shared-library environment.  Gate on
+  # the LoongArch-specific assembler and objdump tests, which are meaningful
+  # in a cross + QEMU setup, and keep the full suites as a report only.
   remove_stamp check-binutils-linux
-  run_make check-binutils-linux
+  rm -f "$binutils_build/binutils/binutils.sum" \
+        "$binutils_build/gas/testsuite/gas.sum" \
+        "$binutils_build/ld/ld.sum"
+  run_make check-binutils-linux \
+    "BINUTILS_CHECK_TARGETS=check-binutils check-gas" \
+    "RUNTESTFLAGS=binutils-all/loongarch64/*.exp gas/loongarch/*.exp"
   run_summary \
     "binutils/linux/p0" \
     "$BASELINE_DIR/glibc-gcc-p0-binutils.txt" \
-    "$ROOT/build-binutils-linux"
+    1 \
+    "$binutils_build"
+
+  remove_stamp check-binutils-linux
+  run_make check-binutils-linux
+  run_summary \
+    "binutils/linux/full" \
+    "$BASELINE_DIR/glibc-gcc-p0-binutils.txt" \
+    0 \
+    "$binutils_build"
 fi
 
 echo "==> P0 runtime checks"

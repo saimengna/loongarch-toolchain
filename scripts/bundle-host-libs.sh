@@ -139,12 +139,12 @@ patch_host_rpaths() {
   done < <(find "$PREFIX/libexec/gcc" -mindepth 3 -maxdepth 3 -type f -print0 2>/dev/null)
   (( count > 0 )) || { echo "没有在 $PREFIX/libexec/gcc 找到宿主 ELF" >&2; return 1; }
 
-  for pattern in "${LIB_PATTERNS[@]}"; do
-    while IFS= read -r -d '' file; do
-      host_elf "$file" || continue
-      patch_one "$file" '$ORIGIN'
-    done < <(find "$PREFIX/lib" -maxdepth 1 -type f -name "${pattern}*" -print0)
-  done
+  # Do not rewrite the bundled runtime libraries themselves.  patchelf
+  # 0.18 corrupts some inputs (for example libmpc.so.3 on x86_64, which
+  # then fails with "ELF load command address/offset not properly
+  # aligned").  The DT_RPATH set on bin/ and libexec/gcc/ programs is
+  # inherited by their dependencies, so the libraries are still found
+  # without carrying an RPATH of their own.
 
   echo "已为 ${#PATCHED_FILES[@]} 个宿主 ELF 写入相对 RPATH"
 }
